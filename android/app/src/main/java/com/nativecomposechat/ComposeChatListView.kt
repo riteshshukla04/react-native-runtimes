@@ -2,6 +2,7 @@ package com.nativecomposechat
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
@@ -164,7 +165,9 @@ private const val FABRIC_CELL_LOG_TAG = "FabricCellHolder"
 private const val ITEM_REQUEST_LOG_TAG = "ComposeChatRequests"
 private const val FABRIC_MOUNT_LOG_TAG = "FabricMount"
 private const val FABRIC_HOST_LOG_TAG = "FabricHost"
+private const val FABRIC_HOST_INVENTORY_LOG_TAG = "FabricHostInventory"
 private const val MESSAGE_LOAD_LOG_TAG = "MessageLoadTelemetry"
+private const val VISIBLE_WINDOW_LOG_TAG = "ComposeVisibleWindow"
 
 private fun debugLog(message: String) {
   if (BuildConfig.DEBUG) {
@@ -192,6 +195,14 @@ private fun hostLog(message: String) {
 
 private fun messageLoadLog(message: String) {
   Log.i(MESSAGE_LOAD_LOG_TAG, message)
+}
+
+private fun fabricHostInventoryLog(message: String) {
+  Log.i(FABRIC_HOST_INVENTORY_LOG_TAG, message)
+}
+
+private fun visibleWindowLog(message: String) {
+  Log.i(VISIBLE_WINDOW_LOG_TAG, message)
 }
 
 private fun ComposeChatListItemView.debugLabel(): String =
@@ -285,9 +296,7 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     val width = (right - left).coerceAtLeast(1)
     val height = (bottom - top).coerceAtLeast(1)
-    for (index in 0 until childCount) {
-      getChildAt(index).layout(0, 0, width, height)
-    }
+    layoutChildrenToBounds(width, height)
     layoutCount += 1
     hostLog(
         "holder#$holderId layout#$layoutCount changed=$changed " +
@@ -295,8 +304,24 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
     )
     debugLog(
         "holder#$holderId layout#$layoutCount changed=$changed " +
-            "size=${width}x$height data=[$lastDataKey] children=$childCount",
+        "size=${width}x$height data=[$lastDataKey] children=$childCount",
     )
+  }
+
+  override fun dispatchDraw(canvas: Canvas) {
+    layoutChildrenToBounds(width.coerceAtLeast(1), height.coerceAtLeast(1))
+    super.dispatchDraw(canvas)
+  }
+
+  private fun layoutChildrenToBounds(width: Int, height: Int) {
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      if (child.left != 0 || child.top != 0 || child.right != width || child.bottom != height) {
+        child.layout(0, 0, width, height)
+      }
+      child.translationX = 0f
+      child.translationY = 0f
+    }
   }
 }
 
@@ -318,8 +343,8 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   private companion object {
     const val WINDOW_BEHIND = 4
     const val WINDOW_AHEAD = 8
-    const val ACTIVE_SCROLL_WINDOW_BEHIND = 1
-    const val ACTIVE_SCROLL_WINDOW_AHEAD = 2
+    const val ACTIVE_SCROLL_WINDOW_BEHIND = 4
+    const val ACTIVE_SCROLL_WINDOW_AHEAD = 8
     const val BACKGROUND_REQUEST_DISPATCH_DELAY_MS = 8L
     const val STALE_REQUEST_MS = 2_000L
   }
@@ -400,6 +425,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         "listCellAdd source=main ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
     )
+    logFabricInventory("listCellAdd source=main")
   }
 
   fun addBackgroundFabricChild(cell: ComposeChatListItemView) {
@@ -417,6 +443,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         "listCellAdd source=background ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
     )
+    logFabricInventory("listCellAdd source=background")
   }
 
   fun removeFabricChild(child: View) {
@@ -437,6 +464,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         "listCellRemove ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
     )
+    logFabricInventory("listCellRemove")
   }
 
   fun removeBackgroundFabricChild(cell: ComposeChatListItemView) {
@@ -482,6 +510,39 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     rowSlots[index]?.fabricCell = null
   }
 
+  private fun removeFabricCellReferences(cell: ComposeChatListItemView, activeIndex: Int) {
+    val staleIndices = fabricCells.filter { (index, mappedCell) ->
+      index != activeIndex && mappedCell === cell
+    }.keys.toList()
+    staleIndices.forEach { index ->
+      hostLog("cellChanged removeStale index=$index activeIndex=$activeIndex ${cell.diagnosticLabel()}")
+      removeFabricCellAt(index)
+      removeFabricCellHeight(index)
+    }
+  }
+
+  private fun logFabricInventory(reason: String) {
+    fabricHostInventoryLog("$reason ${fabricInventorySummary()}")
+  }
+
+  private fun fabricInventorySummary(): String {
+    val pool =
+        fabricChildren.mapIndexed { poolIndex, cell ->
+          "$poolIndex:${cell.activeItemIndex()}:${cell.itemId.ifEmpty { "unset" }}:" +
+              "${cell.hostSlot.ifEmpty { "unset" }}:children=${cell.childCount}:" +
+              "parent=${cell.parent?.javaClass?.simpleName ?: "none"}"
+        }
+    val mapped =
+        fabricCells.entries
+            .sortedBy { it.key }
+            .joinToString(separator = ",", prefix = "[", postfix = "]") { (index, cell) ->
+              val poolIndex = fabricChildren.indexOf(cell)
+              "$index->pool#$poolIndex:${cell.itemId.ifEmpty { "unset" }}:" +
+                  "${cell.hostSlot.ifEmpty { "unset" }}:children=${cell.childCount}"
+            }
+    return "poolSize=${fabricChildren.size} pool=[${pool.joinToString(",")}] mapped=$mapped"
+  }
+
   private fun clearFabricCells() {
     fabricCells.clear()
     rowSlots.values.forEach { it.fabricCell = null }
@@ -515,20 +576,29 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       removeFabricCellHeight(previousIndex)
     }
     if (activeIndex in 0 until itemCount) {
+      removeFabricCellReferences(cell, activeIndex)
       setFabricCell(activeIndex, cell)
+      cell.reportMeasuredContentHeight("cellChanged", force = true)
     }
+    logFabricInventory("cellChanged previousIndex=$previousIndex activeIndex=$activeIndex")
   }
 
-  fun onFabricCellMeasured(index: Int, heightPx: Int) {
+  fun onFabricCellMeasured(index: Int, heightPx: Int, source: String) {
     if (index !in 0 until itemCount || heightPx <= 0) return
 
     val density = resources.displayMetrics.density.coerceAtLeast(1f)
     val heightDp = max(1, (heightPx / density + 0.5f).toInt())
     val current = fabricCellHeights[index]
     hostLog(
-        "cellMeasured index=$index heightPx=$heightPx heightDp=$heightDp " +
+        "cellMeasured source=$source index=$index heightPx=$heightPx heightDp=$heightDp " +
             "currentDp=${current ?: 0} density=$density",
     )
+    if (current != null && abs(current - heightDp) > 1) {
+      hostLog(
+          "cellMeasuredIgnored source=$source index=$index heightDp=$heightDp currentDp=$current",
+      )
+      return
+    }
     if (current == null || abs(current - heightDp) > 1) {
       setFabricCellHeight(index, heightDp)
     }
@@ -628,15 +698,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val items = renderedItems.optArray("items") ?: return
     val activeIndices = visibleRequestWindow.toSet()
     var appliedCount = 0
-    var obsoleteCount = 0
+    var cachedOffscreenCount = 0
     for (i in 0 until items.size()) {
       val row = items.getMap(i) ?: continue
       val index = row.optInt("index", -1)
       if (index < 0 || index >= itemCount) continue
-      if (index !in activeIndices) {
-        obsoleteCount += 1
-        continue
-      }
 
       setRenderedRow(
           index,
@@ -654,7 +720,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       )
       dirtyRows.remove(index)
       pendingRequests.remove(requestKey(incomingVersion, index))
-      appliedCount += 1
+      if (index in activeIndices) {
+        appliedCount += 1
+      } else {
+        cachedOffscreenCount += 1
+      }
     }
     requestedIndices.forEach { index ->
       pendingRequests.remove(requestKey(incomingVersion, index))
@@ -680,7 +750,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             "jsRenderMs=$jsRenderDurationMs jsTotalMs=$jsTotalDurationMs " +
             "bridgeRoundTripMs=$bridgeRoundTripMs uiPostMs=$uiPostMs " +
             "requested=${telemetry?.missingCount ?: requestedIndices.size} returned=${items.size()} " +
-            "applied=$appliedCount obsolete=$obsoleteCount " +
+            "applied=$appliedCount cachedOffscreen=$cachedOffscreenCount " +
             "windowAtRequest=${telemetry?.windowCount ?: -1} currentWindow=${activeIndices.size} " +
             "reset=${telemetry?.resetCount ?: -1}",
     )
@@ -951,6 +1021,18 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
                     visibleIndices = visibleIndices,
                     useActiveScrollWindow = snapshot.isScrolling,
                 )
+            visibleWindowLog(
+                "snapshot scrolling=${snapshot.isScrolling} first=${snapshot.firstIndex} " +
+                    "firstOffset=${snapshot.firstOffset} viewport=${visibleLayout.viewportStart}.." +
+                    "${visibleLayout.viewportEnd} visible=[" +
+                    visibleLayout.items.joinToString(",") { item ->
+                      "${item.index}@${item.offset}+${item.size}"
+                    } +
+                    "] requestWindow=[${requestedIndices.joinToString(",")}] " +
+                    "rendered=[${visibleIndices.filter { renderedRows.containsKey(it) }.joinToString(",")}] " +
+                    "fabric=[${visibleIndices.filter { fabricCells.containsKey(it) }.joinToString(",")}] " +
+                    "missing=[${visibleIndices.filter { !renderedRows.containsKey(it) }.joinToString(",")}]",
+            )
             if (requestedIndices != visibleRequestWindow) {
               visibleRequestWindow = requestedIndices
               requestItemsForWindow(requestedIndices)
@@ -1115,22 +1197,18 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             FabricCellHolder(holderContext).also { holder ->
               debugLog("holder factory data=[$debugDataKey] cell=${cell.debugLabel()}")
             }
-          },
-          modifier = androidViewModifier,
-          update = { holder ->
-            holder.preferredHeightDp = measuredHeightDp ?: 0
-            holder.recordUpdate(debugDataKey, cell)
-            attachFabricCellToHolder(holder, cell)
-          },
-          onReset = { holder ->
-            holder.recordReset("reset")
-            holder.removeAllViews()
-          },
-          onRelease = { holder ->
-            holder.recordReset("release")
-            holder.removeAllViews()
-          },
-      )
+	          },
+	          modifier = androidViewModifier,
+	          update = { holder ->
+	            holder.preferredHeightDp = measuredHeightDp ?: 0
+	            holder.recordUpdate(debugDataKey, cell)
+	            attachFabricCellToHolder(holder, cell)
+	          },
+	          onRelease = { holder ->
+	            holder.recordReset("release")
+	            holder.removeAllViews()
+	          },
+	      )
     }
   }
 
@@ -1158,6 +1236,8 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     if (cell.parent === holder && holder.childCount == 1) {
       hostLog("holderAttachSkip holderChildren=${holder.childCount} ${cell.diagnosticLabel()}")
       fabricMountLog("holderAttachSkip ${cell.debugLabel()} holderChildren=${holder.childCount}")
+      refreshFabricCellTree(cell, "holderAttachSkip")
+      logFabricInventory("holderAttachSkip index=${cell.activeItemIndex()}")
       return
     }
 
@@ -1172,6 +1252,9 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             FrameLayout.LayoutParams.MATCH_PARENT,
         ),
     )
+    cell.requestLayout()
+    holder.requestLayout()
+    refreshFabricCellTree(cell, "holderAttach")
     hostLog(
         "holderAttach previousParent=${previousParent?.javaClass?.simpleName ?: "none"} " +
             "holderChildren=${holder.childCount} durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000} " +
@@ -1181,6 +1264,33 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         "holderAttach ${cell.debugLabel()} previousParent=${previousParent?.javaClass?.simpleName ?: "none"} " +
             "holderChildren=${holder.childCount} durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
     )
+    logFabricInventory("holderAttach index=${cell.activeItemIndex()}")
+  }
+
+  private fun refreshFabricCellTree(cell: ComposeChatListItemView, reason: String) {
+    val parent = cell.parent as? View
+    cell.requestLayout()
+    parent?.requestLayout()
+    invalidateFabricTree(cell)
+    parent?.invalidate()
+
+    cell.post {
+      val postedParent = cell.parent as? View
+      cell.requestLayout()
+      postedParent?.requestLayout()
+      invalidateFabricTree(cell)
+      postedParent?.invalidate()
+      hostLog("refreshFabricCellTree reason=$reason ${cell.diagnosticLabel()}")
+    }
+  }
+
+  private fun invalidateFabricTree(view: View) {
+    view.invalidate()
+    if (view is ViewGroup) {
+      for (index in 0 until view.childCount) {
+        invalidateFabricTree(view.getChildAt(index))
+      }
+    }
   }
 
   @Composable
@@ -1203,15 +1313,26 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
                   .background(if (item.isOwn) Color(0xFF1D4ED8) else Color.White)
                   .padding(horizontal = 12.dp, vertical = 9.dp),
       ) {
-        BasicText(
-            text = item.author,
-            style =
-                TextStyle(
-                    color = if (item.isOwn) Color(0xFFDCEAFE) else Color(0xFF475569),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          BasicText(
+              text = item.author,
+              style =
+                  TextStyle(
+                      color = if (item.isOwn) Color(0xFFDCEAFE) else Color(0xFF475569),
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.SemiBold,
+                  ),
+          )
+          BasicText(
+              text = "#$index",
+              style =
+                  TextStyle(
+                      color = if (item.isOwn) Color(0xFFBFDBFE) else Color(0xFF64748B),
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.SemiBold,
+                  ),
+          )
+        }
         Box(
             modifier =
                 Modifier.width(1.dp)
@@ -1306,6 +1427,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val activeIndices = indices.filter { it in 0 until itemCount }.distinct()
     visibleRequestWindow = activeIndices
     pruneToActiveWindow()
+    restoreActiveFabricCells(activeIndices.toSet())
     pruneStalePendingRequests()
     val windowKey = activeIndices.joinToString(",")
 
@@ -1565,6 +1687,24 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       } else {
         pendingRequestBatches[requestId] = remaining
       }
+    }
+  }
+
+  private fun restoreActiveFabricCells(activeIndices: Set<Int>) {
+    if (activeIndices.isEmpty()) return
+
+    var restoredCount = 0
+    fabricChildren.forEach { cell ->
+      val activeIndex = cell.activeItemIndex()
+      if (activeIndex in activeIndices && fabricCells[activeIndex] !== cell) {
+        setFabricCell(activeIndex, cell)
+        refreshFabricCellTree(cell, "restoreActive")
+        cell.reportMeasuredContentHeight("restoreActive", force = true)
+        restoredCount += 1
+      }
+    }
+    if (restoredCount > 0) {
+      logFabricInventory("restoreActive count=$restoredCount active=[${activeIndices.joinToString(",")}]")
     }
   }
 

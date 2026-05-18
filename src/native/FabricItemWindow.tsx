@@ -6,7 +6,7 @@ import {
   useState,
   type ReactElement,
 } from 'react';
-import {View, type LayoutChangeEvent} from 'react-native';
+import {View} from 'react-native';
 import {
   ComposeChatListItemNativeComponent,
   type ComposeChatListDataOp,
@@ -58,23 +58,10 @@ export function FabricItemWindow({
   keyExtractor?: (item: RenderedChatItem, index: number) => string;
   renderItem: FabricItemWindowRenderer;
 }) {
-  const [itemHeights, setItemHeights] = useState<Record<string, number>>({});
+  const renderCountRef = useRef(0);
   const [poolSizes, setPoolSizes] = useState<Record<string, number>>({});
   const slotAssignmentsRef = useRef<Record<string, Array<string | null>>>({});
-
-  useEffect(() => {
-    const activeItemIds = new Set(items.map(item => item.id));
-    setItemHeights(previousHeights => {
-      const nextHeights = Object.fromEntries(
-        Object.entries(previousHeights).filter(([itemId]) =>
-          activeItemIds.has(itemId),
-        ),
-      );
-      return Object.keys(nextHeights).length === Object.keys(previousHeights).length
-        ? previousHeights
-        : nextHeights;
-    });
-  }, [items]);
+  renderCountRef.current += 1;
 
   useEffect(() => {
     const typeCounts = countItemsByType(items);
@@ -98,27 +85,17 @@ export function FabricItemWindow({
     });
   }, [items]);
 
-  const handleItemLayout = useCallback(function handleItemLayout(
-    item: RenderedChatItem,
-    event: LayoutChangeEvent,
-  ) {
-    const height = Math.ceil(event.nativeEvent.layout.height);
-    if (height <= 0) {
-      return;
-    }
-
-    setItemHeights(previousHeights => {
-      if (previousHeights[item.id] === height) {
-        return previousHeights;
-      }
-      return {...previousHeights, [item.id]: height};
-    });
-  }, []);
-
   const renderCells = assignStickySlots(
     slotAssignmentsRef.current,
     groupItemsByType(items),
     poolSizes,
+  );
+  logReactRender(
+    `FabricItemWindow render#${renderCountRef.current} items=[${items
+      .map(item => `${item.index}:${item.id}:v${item.renderVersion}`)
+      .join(',')}] cells=[${renderCells
+      .map(({item, slot, type}) => `${type}:${slot}->${item.index}:${item.id}`)
+      .join(',')}] poolSizes=${JSON.stringify(poolSizes)}`,
   );
 
   return (
@@ -134,9 +111,7 @@ export function FabricItemWindow({
             itemId={item.id}
             itemIndex={item.index}
             key={`${type}:${slot}`}
-            measuredHeight={itemHeights[item.id] ?? 0}
             messagePreview={messagePreview}
-            onItemLayout={handleItemLayout}
             renderItem={renderItem}
           />
         );
@@ -152,9 +127,7 @@ const FabricItemCell = memo(
     item,
     itemId,
     itemIndex,
-    measuredHeight,
     messagePreview,
-    onItemLayout,
     renderItem,
   }: {
     contentType: string;
@@ -162,40 +135,63 @@ const FabricItemCell = memo(
     item: RenderedChatItem;
     itemId: string;
     itemIndex: number;
-    measuredHeight: number;
     messagePreview: string;
-    onItemLayout: (item: RenderedChatItem, event: LayoutChangeEvent) => void;
     renderItem: FabricItemWindowRenderer;
   }) {
+    const renderCountRef = useRef(0);
+    renderCountRef.current += 1;
+    logReactRender(
+      `FabricItemCell render#${renderCountRef.current} slot=${hostSlot} ` +
+        `index=${itemIndex} itemId=${itemId} renderVersion=${item.renderVersion} ` +
+        `type=${contentType}`,
+    );
+
+    useEffect(() => {
+      logReactRender(
+        `FabricItemCell mount slot=${hostSlot} index=${itemIndex} itemId=${itemId} ` +
+          `renderVersion=${item.renderVersion} type=${contentType}`,
+      );
+      return () => {
+        logReactRender(
+          `FabricItemCell unmount slot=${hostSlot} index=${itemIndex} itemId=${itemId} ` +
+            `renderVersion=${item.renderVersion} type=${contentType}`,
+        );
+      };
+    }, [contentType, hostSlot, item.renderVersion, itemId, itemIndex]);
+
     return (
       <ComposeChatListItemNativeComponent
         contentType={contentType}
         hostSlot={hostSlot}
         itemId={itemId}
         itemIndex={itemIndex}
-        measuredHeight={measuredHeight}
         messagePreview={messagePreview}
         renderVersion={item.renderVersion}
         style={fabricItemHostStyle}>
-        <View
-          collapsable={false}
-          onLayout={event => {
-            onItemLayout(item, event);
-          }}
-          style={fabricItemHostStyle}>
+        <View collapsable={false} style={fabricItemHostStyle}>
           {renderItem({item, index: item.index})}
         </View>
       </ComposeChatListItemNativeComponent>
     );
   },
-  (previous, next) =>
-    previous.contentType === next.contentType &&
-    previous.hostSlot === next.hostSlot &&
-    previous.item === next.item &&
-    previous.itemId === next.itemId &&
-    previous.itemIndex === next.itemIndex &&
-    previous.measuredHeight === next.measuredHeight &&
-    previous.messagePreview === next.messagePreview,
+  (previous, next) => {
+    const equal =
+      previous.contentType === next.contentType &&
+      previous.hostSlot === next.hostSlot &&
+      previous.item === next.item &&
+      previous.itemId === next.itemId &&
+      previous.itemIndex === next.itemIndex &&
+      previous.messagePreview === next.messagePreview;
+    if (!equal) {
+      logReactRender(
+        `FabricItemCell rerender slot=${previous.hostSlot}->${next.hostSlot} ` +
+          `index=${previous.itemIndex}->${next.itemIndex} itemId=${previous.itemId}->${next.itemId} ` +
+          `version=${previous.item.renderVersion}->${next.item.renderVersion} ` +
+          `type=${previous.contentType}->${next.contentType}`,
+      );
+    }
+    return equal;
+  },
 );
 
 export function maxDataOpSeq(ops: ComposeChatListDataOp[]) {
@@ -388,3 +384,8 @@ const fabricItemHostStyle = {
   display: 'flex' as const,
   width: '100%' as const,
 };
+
+function logReactRender(message: string) {
+  // Intentionally visible in logcat under ReactNativeJS for release perf debugging.
+  console.log(`[FabricReactRender] ${message}`);
+}

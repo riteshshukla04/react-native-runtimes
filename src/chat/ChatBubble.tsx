@@ -1,3 +1,4 @@
+import {useEffect, useRef} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import type {RenderedChatItem} from '../native/ComposeChatListNativeComponent';
 
@@ -12,6 +13,26 @@ export function ChatBubble({
   rowPrefix?: string;
   reactionPrefix?: string;
 }) {
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  logReactRender(
+    `ChatBubble render#${renderCountRef.current} index=${item.index} itemId=${item.id} ` +
+      `renderVersion=${item.renderVersion} type=${item.type} own=${item.isOwn}`,
+  );
+
+  useEffect(() => {
+    logReactRender(
+      `ChatBubble mount index=${item.index} itemId=${item.id} ` +
+        `renderVersion=${item.renderVersion} type=${item.type}`,
+    );
+    return () => {
+      logReactRender(
+        `ChatBubble unmount index=${item.index} itemId=${item.id} ` +
+          `renderVersion=${item.renderVersion} type=${item.type}`,
+      );
+    };
+  }, [item.id, item.index, item.renderVersion, item.type]);
+
   return (
     <View
       accessibilityLabel={`${rowPrefix}-${item.index}-v${item.renderVersion} ${rowPrefix}-${item.index}-item-${item.id} ${rowPrefix}-${item.index}-fabric-item-${item.id}`}
@@ -23,9 +44,14 @@ export function ChatBubble({
           styles.bubble,
           item.isOwn ? styles.bubbleOwn : styles.bubbleOther,
         ]}>
-        <Text style={[styles.author, item.isOwn && styles.authorOwn]}>
-          {item.author}
-        </Text>
+        <View style={styles.header}>
+          <Text style={[styles.author, item.isOwn && styles.authorOwn]}>
+            {item.author}
+          </Text>
+          <Text style={[styles.index, item.isOwn && styles.indexOwn]}>
+            #{item.index}
+          </Text>
+        </View>
         <Text style={[styles.body, item.isOwn && styles.bodyOwn]}>
           {item.body}
         </Text>
@@ -116,7 +142,6 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 3,
   },
   authorOwn: {
     color: '#DCEAFE',
@@ -155,4 +180,22 @@ const styles = StyleSheet.create({
   reactionTextOwn: {
     color: '#FFFFFF',
   },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 3,
+  },
+  index: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  indexOwn: {
+    color: '#BFDBFE',
+  },
 });
+
+function logReactRender(message: string) {
+  console.log(`[FabricReactRender] ${message}`);
+}

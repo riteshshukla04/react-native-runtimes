@@ -1,6 +1,7 @@
 package com.nativecomposechat
 
 import android.content.Context
+import android.graphics.Canvas
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
@@ -34,6 +35,8 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
   var owner: ComposeChatListView? = null
   private var lastReportedHeight = 0
   private var preferredMeasuredHeightPx = 0
+  private var pendingCellChangedPreviousIndex: Int? = null
+  private var pendingCellChangedRunnable: Runnable? = null
 
   init {
     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
@@ -47,7 +50,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     val previousIndex = itemIndex
     itemIndex = nextItemIndex
     hostLog("prop itemIndex $previousIndex->$nextItemIndex ${diagnosticLabel()}")
-    owner?.onFabricCellChanged(this, previousActiveIndex)
+    scheduleCellChanged(previousActiveIndex)
   }
 
   fun setItemId(nextItemId: String) {
@@ -56,7 +59,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     val previousItemId = itemId
     itemId = nextItemId
     hostLog("prop itemId $previousItemId->$nextItemId ${diagnosticLabel()}")
-    owner?.onFabricCellChanged(this, previousActiveIndex)
+    scheduleCellChanged(previousActiveIndex)
   }
 
   fun setRenderVersion(nextRenderVersion: Int) {
@@ -65,7 +68,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     val previousRenderVersion = renderVersion
     renderVersion = nextRenderVersion
     hostLog("prop renderVersion $previousRenderVersion->$nextRenderVersion ${diagnosticLabel()}")
-    owner?.onFabricCellChanged(this, previousActiveIndex)
+    scheduleCellChanged(previousActiveIndex)
   }
 
   fun setContentType(nextContentType: String) {
@@ -74,7 +77,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     val previousContentType = contentType
     contentType = nextContentType
     hostLog("prop contentType $previousContentType->$nextContentType ${diagnosticLabel()}")
-    owner?.onFabricCellChanged(this, previousActiveIndex)
+    scheduleCellChanged(previousActiveIndex)
   }
 
   fun setHostSlot(nextHostSlot: String) {
@@ -91,7 +94,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     val previousPreview = messagePreview
     messagePreview = normalizedPreview
     hostLog("prop messagePreview [$previousPreview]->[$normalizedPreview] ${diagnosticLabel()}")
-    owner?.onFabricCellChanged(this, previousActiveIndex)
+    scheduleCellChanged(previousActiveIndex)
   }
 
   fun addFabricChild(child: View, index: Int) {
@@ -153,9 +156,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
 
     val exactWidth = MeasureSpec.makeMeasureSpec(max(1, resolvedWidth), MeasureSpec.EXACTLY)
     val exactHeight = MeasureSpec.makeMeasureSpec(max(1, resolvedHeight), MeasureSpec.EXACTLY)
-    for (index in 0 until childCount) {
-      getChildAt(index).measure(exactWidth, exactHeight)
-    }
+    measureFabricChildren(exactWidth, exactHeight)
     setMeasuredDimension(max(1, resolvedWidth), max(1, resolvedHeight))
     hostLog(
         "measure ${diagnosticLabel()} widthSpec=${MeasureSpec.toString(widthMeasureSpec)} " +
@@ -167,33 +168,61 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    val childRight = max(1, right - left)
-    val childBottom = max(1, bottom - top)
-    for (index in 0 until childCount) {
-      getChildAt(index).layout(0, 0, childRight, childBottom)
-    }
+    layoutFabricChildren(max(1, right - left), max(1, bottom - top))
     hostLog(
         "layout changed=$changed ${diagnosticLabel()} bounds=${right - left}x${bottom - top} " +
-            "childFrame=${childRight}x$childBottom children=${childSummary()}",
+            "childFrame=${max(1, right - left)}x${max(1, bottom - top)} children=${childSummary()}",
     )
     owner?.onFabricCellLaidOut(this)
     post {
       if (preferredMeasuredHeightPx > 0) return@post
+      reportMeasuredContentHeight("yoga")
+    }
+  }
 
-      val measuredContentHeight = measuredContentHeightFromYogaChildren()
-      if (measuredContentHeight > 0 && abs(measuredContentHeight - lastReportedHeight) > 1) {
-        hostLog(
-            "contentHeight yoga ${diagnosticLabel()} measuredPx=$measuredContentHeight " +
-                "previousPx=$lastReportedHeight",
-        )
-        lastReportedHeight = measuredContentHeight
-        val activeIndex = activeItemIndex()
-        if (activeIndex >= 0) {
-          owner?.onFabricCellMeasured(activeIndex, measuredContentHeight)
-        } else {
-          hostLog("skip measured inactive source=yoga ${diagnosticLabel()} heightPx=$measuredContentHeight")
-        }
+  override fun dispatchDraw(canvas: Canvas) {
+    layoutFabricChildren(max(1, width), max(1, height))
+    super.dispatchDraw(canvas)
+  }
+
+  private fun measureFabricChildren(widthSpec: Int, heightSpec: Int) {
+    for (index in 0 until childCount) {
+      getChildAt(index).measure(widthSpec, heightSpec)
+    }
+  }
+
+  private fun layoutFabricChildren(width: Int, height: Int) {
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      if (child.left != 0 || child.top != 0 || child.right != width || child.bottom != height) {
+        child.layout(0, 0, width, height)
       }
+      child.translationX = 0f
+      child.translationY = 0f
+    }
+  }
+
+  fun reportMeasuredContentHeight(source: String, force: Boolean = false) {
+    val measuredContentHeight = measuredContentHeightFromYogaChildren()
+    if (
+        measuredContentHeight <= 1 ||
+            (!force && abs(measuredContentHeight - lastReportedHeight) <= 1)
+    ) {
+      return
+    }
+
+    hostLog(
+        "contentHeight source=$source ${diagnosticLabel()} measuredPx=$measuredContentHeight " +
+            "previousPx=$lastReportedHeight",
+    )
+    lastReportedHeight = measuredContentHeight
+    val activeIndex = activeItemIndex()
+    if (activeIndex >= 0) {
+      owner?.onFabricCellMeasured(activeIndex, measuredContentHeight, source)
+    } else {
+      hostLog(
+          "skip measured inactive source=$source ${diagnosticLabel()} heightPx=$measuredContentHeight",
+      )
     }
   }
 
@@ -230,7 +259,7 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
     lastReportedHeight = heightPx
     val activeIndex = activeItemIndex()
     if (activeIndex >= 0) {
-      owner?.onFabricCellMeasured(activeIndex, heightPx)
+      owner?.onFabricCellMeasured(activeIndex, heightPx, "prop")
     } else {
       hostLog("skip measured inactive source=prop ${diagnosticLabel()} heightPx=$heightPx")
     }
@@ -246,6 +275,25 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
       )
           itemIndex
       else -1
+
+  private fun scheduleCellChanged(previousActiveIndex: Int) {
+    if (pendingCellChangedRunnable == null) {
+      pendingCellChangedPreviousIndex = previousActiveIndex
+      val runnable = Runnable {
+        val previousIndex = pendingCellChangedPreviousIndex ?: -1
+        pendingCellChangedRunnable = null
+        pendingCellChangedPreviousIndex = null
+        owner?.onFabricCellChanged(this, previousIndex)
+      }
+      pendingCellChangedRunnable = runnable
+      post(runnable)
+      return
+    }
+
+    if (pendingCellChangedPreviousIndex == null) {
+      pendingCellChangedPreviousIndex = previousActiveIndex
+    }
+  }
 
   fun diagnosticLabel(): String =
       "cell#$cellInstanceId slot=${hostSlot.ifEmpty { "unset" }} itemIndex=$itemIndex " +
