@@ -1,0 +1,22 @@
+appId: com.nativecomposechat
+name: Adding Reaction Requests Authoritative Rerender
+tags:
+  - reaction
+  - rerender
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Native LazyColumn + JSX Cells"
+- assertVisible: "chat-row-0-v1"
+- assertNotVisible: "chat-row-0-skeleton"
+- takeScreenshot:
+    path: reaction-rerender-before
+
+- tapOn:
+    id: action-react-latest
+- assertVisible: "10,000 messages / v2 / idle"
+- assertVisible: "chat-reaction-0-like-1"
+- assertVisible: "chat-row-0-v2"
+- assertNotVisible: "chat-row-0-skeleton"
+- takeScreenshot:
+    path: reaction-rerender-after-v2

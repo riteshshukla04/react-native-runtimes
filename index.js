@@ -2,8 +2,16 @@
  * @format
  */
 
-import { AppRegistry } from 'react-native';
-import App from './App';
-import { name as appName } from './app.json';
+const {AppRegistry} = require('react-native');
 
-AppRegistry.registerComponent(appName, () => App);
+const isListEnvironment = global._is_it_a_list_env === true;
+
+if (isListEnvironment) {
+  AppRegistry.registerComponent(
+    'ComposeChatBackgroundRenderer',
+    () => require('./src/chat/BackgroundChatRenderer').default,
+  );
+} else {
+  const {name: appName} = require('./app.json');
+  AppRegistry.registerComponent(appName, () => require('./App').default);
+}

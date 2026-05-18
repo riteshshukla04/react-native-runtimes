@@ -16,11 +16,12 @@ end
 
 target 'NativeComposeChat' do
   config = use_native_modules!
+  app_path = ENV['RN_APP_PATH'] || "#{Pod::Config.instance.installation_root}/.."
 
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/.."
+    :app_path => app_path
   )
 
   post_install do |installer|

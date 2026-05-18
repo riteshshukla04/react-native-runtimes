@@ -6,13 +6,18 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
+    "maestro": "maestro test maestro",
+    "maestro:reaction:no-flicker": "maestro test maestro/02-reaction-no-flicker.yaml",
+    "maestro:reaction:rerender": "maestro test maestro/03-reaction-rerender.yaml",
+    "maestro:scroll": "maestro test maestro/01-scroll-10k-snapshots.yaml",
     "start": "react-native start",
     "test": "jest"
   },
   "dependencies": {
+    "@react-native/new-app-screen": "0.86.0-rc.0",
     "react": "19.2.3",
     "react-native": "0.86.0-rc.0",
-    "@react-native/new-app-screen": "0.86.0-rc.0",
+    "react-native-ease": "^0.7.2",
     "react-native-safe-area-context": "^5.5.2"
   },
   "devDependencies": {
@@ -24,6 +29,7 @@
     "@react-native-community/cli-platform-ios": "20.1.0",
     "@react-native/babel-preset": "0.86.0-rc.0",
     "@react-native/eslint-config": "0.86.0-rc.0",
+    "@react-native/jest-preset": "^0.86.0-rc.0",
     "@react-native/metro-config": "0.86.0-rc.0",
     "@react-native/typescript-config": "0.86.0-rc.0",
     "@types/jest": "^29.5.13",
@@ -37,5 +43,20 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "NativeComposeChatSpec",
+    "type": "components",
+    "jsSrcsDir": "./src/native",
+    "android": {
+      "javaPackageName": "com.nativecomposechat"
+    },
+    "ios": {
+      "componentProvider": {
+        "ComposeChatList": "RCTComposeChatList",
+        "ComposeChatBackgroundHost": "RCTComposeChatBackgroundHost",
+        "ComposeChatListItem": "RCTComposeChatListItem"
+      }
+    }
   }
 }

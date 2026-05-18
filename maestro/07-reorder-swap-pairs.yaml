@@ -1,0 +1,55 @@
+appId: com.nativecomposechat
+name: Reorder Swaps First Ten Items In Pairs
+tags:
+  - benchmark
+  - reorder
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Native LazyColumn + JSX Cells"
+- assertVisible: "10,000 messages / v1 / idle"
+- assertVisible: "chat-row-0-item-msg-0"
+- assertVisible: "chat-row-1-item-msg-1"
+- tapOn:
+    id: action-swap-first-ten-pairs
+- waitForAnimationToEnd
+- assertVisible: "10,000 messages / v2 / idle"
+- assertVisible: "chat-row-0-item-msg-1"
+- assertVisible: "chat-row-1-item-msg-0"
+- assertNotVisible: "chat-row-0-skeleton"
+- takeScreenshot:
+    path: reorder-swap-pairs-main-head
+
+- tapOn:
+    id: action-scroll-to-8
+- waitForAnimationToEnd
+- assertVisible: "chat-row-8-item-msg-9"
+- assertVisible: "chat-row-9-item-msg-8"
+- assertNotVisible: "chat-row-8-skeleton"
+- takeScreenshot:
+    path: reorder-swap-pairs-main-tail
+
+- tapOn:
+    id: tab-second-rn
+- assertVisible: "Native LazyColumn + 2nd RN JSX"
+- assertVisible: "10,000 messages / v1 / idle"
+- assertVisible: "chat-row-0-item-msg-0"
+- assertVisible: "chat-row-1-item-msg-1"
+- tapOn:
+    id: action-swap-first-ten-pairs
+- waitForAnimationToEnd
+- assertVisible: "10,000 messages / v2 / idle"
+- assertVisible: "chat-row-0-item-msg-1"
+- assertVisible: "chat-row-1-item-msg-0"
+- assertNotVisible: "chat-row-0-skeleton"
+- takeScreenshot:
+    path: reorder-swap-pairs-second-head
+
+- tapOn:
+    id: action-scroll-to-8
+- waitForAnimationToEnd
+- assertVisible: "chat-row-8-item-msg-9"
+- assertVisible: "chat-row-9-item-msg-8"
+- assertNotVisible: "chat-row-8-skeleton"
+- takeScreenshot:
+    path: reorder-swap-pairs-second-tail
