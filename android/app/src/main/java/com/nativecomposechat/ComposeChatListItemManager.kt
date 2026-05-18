@@ -41,6 +41,16 @@ class ComposeChatListItemManager :
     view.setContentType(value ?: "default")
   }
 
+  @ReactProp(name = "hostSlot")
+  override fun setHostSlot(view: ComposeChatListItemView, value: String?) {
+    view.setHostSlot(value ?: "")
+  }
+
+  @ReactProp(name = "messagePreview")
+  override fun setMessagePreview(view: ComposeChatListItemView, value: String?) {
+    view.setMessagePreview(value ?: "")
+  }
+
   @ReactProp(name = "measuredHeight", defaultInt = 0)
   override fun setMeasuredHeight(view: ComposeChatListItemView, value: Int) {
     view.setMeasuredContentHeightDp(value)

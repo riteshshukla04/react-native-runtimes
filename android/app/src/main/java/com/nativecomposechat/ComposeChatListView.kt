@@ -148,6 +148,7 @@ private data class VisibleWindowSnapshot(
 private const val FABRIC_CELL_LOG_TAG = "FabricCellHolder"
 private const val ITEM_REQUEST_LOG_TAG = "ComposeChatRequests"
 private const val FABRIC_MOUNT_LOG_TAG = "FabricMount"
+private const val FABRIC_HOST_LOG_TAG = "FabricHost"
 
 private fun debugLog(message: String) {
   if (BuildConfig.DEBUG) {
@@ -167,8 +168,12 @@ private fun fabricMountLog(message: String) {
   }
 }
 
+private fun hostLog(message: String) {
+  Log.i(FABRIC_HOST_LOG_TAG, message)
+}
+
 private fun ComposeChatListItemView.debugLabel(): String =
-    "itemIndex=$itemIndex itemId=$itemId renderVersion=$renderVersion contentType=$contentType"
+    diagnosticLabel()
 
 private class FabricCellHolder(context: Context) : FrameLayout(context) {
   companion object {
@@ -198,6 +203,10 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
   fun recordUpdate(dataKey: String, cell: ComposeChatListItemView) {
     updateCount += 1
     val dataChanged = lastDataKey.isNotEmpty() && lastDataKey != dataKey
+    hostLog(
+        "holder#$holderId update#$updateCount dataChanged=$dataChanged " +
+            "children=$childCount data=[$dataKey] cell=${cell.diagnosticLabel()}",
+    )
     debugLog(
         "holder#$holderId update#$updateCount dataChanged=$dataChanged " +
             "data=[$dataKey] cell=${cell.debugLabel()} children=$childCount",
@@ -206,6 +215,10 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
   }
 
   fun recordReset(reason: String) {
+    hostLog(
+        "holder#$holderId $reason updates=$updateCount measures=$measureCount " +
+            "layouts=$layoutCount lastData=[$lastDataKey] children=$childCount",
+    )
     debugLog(
         "holder#$holderId $reason updates=$updateCount measures=$measureCount " +
             "layouts=$layoutCount lastData=[$lastDataKey] children=$childCount",
@@ -236,6 +249,10 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
             "widthSpec=${MeasureSpec.toString(widthMeasureSpec)} " +
             "heightSpec=${MeasureSpec.toString(heightMeasureSpec)}"
     val measureChanged = lastMeasureKey.isNotEmpty() && lastMeasureKey != measureKey
+    hostLog(
+        "holder#$holderId measure#$measureCount changed=$measureChanged " +
+            "$measureKey data=[$lastDataKey] children=$childCount",
+    )
     debugLog(
         "holder#$holderId measure#$measureCount changed=$measureChanged " +
             "$measureKey data=[$lastDataKey] children=$childCount",
@@ -250,6 +267,10 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
       getChildAt(index).layout(0, 0, width, height)
     }
     layoutCount += 1
+    hostLog(
+        "holder#$holderId layout#$layoutCount changed=$changed " +
+            "size=${width}x$height data=[$lastDataKey] children=$childCount",
+    )
     debugLog(
         "holder#$holderId layout#$layoutCount changed=$changed " +
             "size=${width}x$height data=[$lastDataKey] children=$childCount",
@@ -344,6 +365,10 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     cell.owner = this
     fabricChildren.add(index.coerceIn(0, fabricChildren.size), cell)
     onFabricCellChanged(cell, -1)
+    hostLog(
+        "listCellAdd source=main poolSize=${fabricChildren.size} " +
+            "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000} ${cell.diagnosticLabel()}",
+    )
     fabricMountLog(
         "listCellAdd source=main ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
@@ -357,6 +382,10 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     cell.owner = this
     fabricChildren.add(cell)
     onFabricCellChanged(cell, -1)
+    hostLog(
+        "listCellAdd source=background poolSize=${fabricChildren.size} " +
+            "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000} ${cell.diagnosticLabel()}",
+    )
     fabricMountLog(
         "listCellAdd source=background ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
@@ -367,11 +396,16 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val cell = child as? ComposeChatListItemView ?: return
     val startNs = SystemClock.elapsedRealtimeNanos()
     fabricChildren.remove(cell)
-    if (cell.itemIndex >= 0 && fabricCells[cell.itemIndex] === cell) {
-      removeFabricCellAt(cell.itemIndex)
-      removeFabricCellHeight(cell.itemIndex)
+    val activeIndex = cell.activeItemIndex()
+    if (activeIndex >= 0 && fabricCells[activeIndex] === cell) {
+      removeFabricCellAt(activeIndex)
+      removeFabricCellHeight(activeIndex)
     }
     cell.owner = null
+    hostLog(
+        "listCellRemove poolSize=${fabricChildren.size} " +
+            "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000} ${cell.diagnosticLabel()}",
+    )
     fabricMountLog(
         "listCellRemove ${cell.debugLabel()} poolSize=${fabricChildren.size} " +
             "durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000}",
@@ -442,12 +476,19 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   }
 
   fun onFabricCellChanged(cell: ComposeChatListItemView, previousIndex: Int) {
+    val activeIndex = cell.activeItemIndex()
+    hostLog(
+        "cellChanged previousIndex=$previousIndex newIndex=$activeIndex rawIndex=${cell.itemIndex} " +
+            "itemCount=$itemCount activeWindow=[${
+              visibleRequestWindow.joinToString(",")
+            }] ${cell.diagnosticLabel()}",
+    )
     if (previousIndex >= 0 && fabricCells[previousIndex] === cell) {
       removeFabricCellAt(previousIndex)
       removeFabricCellHeight(previousIndex)
     }
-    if (cell.itemIndex in 0 until itemCount) {
-      setFabricCell(cell.itemIndex, cell)
+    if (activeIndex in 0 until itemCount) {
+      setFabricCell(activeIndex, cell)
     }
   }
 
@@ -457,6 +498,10 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val density = resources.displayMetrics.density.coerceAtLeast(1f)
     val heightDp = max(1, (heightPx / density + 0.5f).toInt())
     val current = fabricCellHeights[index]
+    hostLog(
+        "cellMeasured index=$index heightPx=$heightPx heightDp=$heightDp " +
+            "currentDp=${current ?: 0} density=$density",
+    )
     if (current == null || abs(current - heightDp) > 1) {
       setFabricCellHeight(index, heightDp)
     }
@@ -1038,6 +1083,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
 
   private fun attachFabricCellToHolder(holder: FabricCellHolder, cell: ComposeChatListItemView) {
     if (cell.parent === holder && holder.childCount == 1) {
+      hostLog("holderAttachSkip holderChildren=${holder.childCount} ${cell.diagnosticLabel()}")
       fabricMountLog("holderAttachSkip ${cell.debugLabel()} holderChildren=${holder.childCount}")
       return
     }
@@ -1052,6 +1098,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ),
+    )
+    hostLog(
+        "holderAttach previousParent=${previousParent?.javaClass?.simpleName ?: "none"} " +
+            "holderChildren=${holder.childCount} durationUs=${(SystemClock.elapsedRealtimeNanos() - startNs) / 1_000} " +
+            cell.diagnosticLabel(),
     )
     fabricMountLog(
         "holderAttach ${cell.debugLabel()} previousParent=${previousParent?.javaClass?.simpleName ?: "none"} " +

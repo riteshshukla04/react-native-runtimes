@@ -52,9 +52,6 @@ export function FabricItemWindow({
   renderItem: FabricItemWindowRenderer;
 }) {
   const [itemHeights, setItemHeights] = useState<Record<string, number>>({});
-  const [typeHeightEstimates, setTypeHeightEstimates] = useState<
-    Record<string, number>
-  >({});
   const [poolSizes, setPoolSizes] = useState<Record<string, number>>({});
   const slotAssignmentsRef = useRef<Record<string, Array<string | null>>>({});
 
@@ -106,15 +103,6 @@ export function FabricItemWindow({
       }
       return {...previousHeights, [item.id]: height};
     });
-    setTypeHeightEstimates(previousEstimates => {
-      const previousHeight = previousEstimates[item.type];
-      const nextHeight =
-        previousHeight == null ? height : Math.round(previousHeight * 0.75 + height * 0.25);
-      if (previousHeight === nextHeight) {
-        return previousEstimates;
-      }
-      return {...previousEstimates, [item.type]: nextHeight};
-    });
   }
 
   const renderCells = assignStickySlots(
@@ -126,19 +114,21 @@ export function FabricItemWindow({
   return (
     <>
       {renderCells.map(({item, slot, type}) => {
-          const itemId = item?.id ?? `pool:${type}:${slot}`;
-          const itemIndex = item?.index ?? -1;
-          return (
+        const hostSlot = `${type}:${slot}`;
+        const itemId = item?.id ?? `pool:${hostSlot}`;
+        const itemIndex = item?.index ?? -1;
+        const measuredHeight = item == null ? 0 : itemHeights[item.id] ?? 0;
+        const messagePreview =
+          item == null ? 'inactive' : `${item.author}: ${item.body.slice(0, 80)}`;
+        return (
           <ComposeChatListItemNativeComponent
             contentType={type}
+            hostSlot={hostSlot}
             itemId={itemId}
             itemIndex={itemIndex}
             key={`${type}:${slot}`}
-            measuredHeight={
-              item == null
-                ? typeHeightEstimates[type] ?? 0
-                : itemHeights[item.id] ?? 0
-            }
+            measuredHeight={measuredHeight}
+            messagePreview={messagePreview}
             renderVersion={item?.renderVersion ?? 0}
             style={item == null ? inactiveFabricItemHostStyle : fabricItemHostStyle}>
             <View

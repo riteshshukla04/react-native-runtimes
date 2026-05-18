@@ -110,6 +110,8 @@ export const ComposeChatListItemNativeComponent =
     itemId: string;
     renderVersion: number;
     contentType?: string;
+    hostSlot?: string;
+    messagePreview?: string;
     measuredHeight?: number;
   }> &
     ComponentType<
@@ -118,6 +120,8 @@ export const ComposeChatListItemNativeComponent =
         itemId: string;
         renderVersion: number;
         contentType?: string;
+        hostSlot?: string;
+        messagePreview?: string;
         measuredHeight?: number;
       }
     >;

@@ -8,6 +8,8 @@ export interface NativeProps extends ViewProps {
   itemId: string;
   renderVersion: Int32;
   contentType?: string;
+  hostSlot?: string;
+  messagePreview?: string;
   measuredHeight?: Int32;
 }
 
