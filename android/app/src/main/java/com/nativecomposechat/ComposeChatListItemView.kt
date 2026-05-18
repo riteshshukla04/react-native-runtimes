@@ -256,7 +256,9 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
           "preview=[$messagePreview]"
 
   private fun hostLog(message: String) {
-    Log.i(FABRIC_HOST_LOG_TAG, message)
+    if (Log.isLoggable(FABRIC_HOST_LOG_TAG, Log.DEBUG)) {
+      Log.d(FABRIC_HOST_LOG_TAG, message)
+    }
   }
 
   private fun childSummary(): String {

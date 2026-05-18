@@ -69,6 +69,8 @@ type NativeRenderedChatItem = Readonly<{
 type NativeRenderedItems = Readonly<{
   version: Int32;
   requestId: Int32;
+  jsRenderDurationMs?: Int32;
+  jsTotalDurationMs?: Int32;
   items: ReadonlyArray<NativeRenderedChatItem>;
 }>;
 

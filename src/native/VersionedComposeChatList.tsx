@@ -160,16 +160,21 @@ export const VersionedComposeChatList = forwardRef<
     const indices = parseIndexList(indicesJson);
     const resetIndices = parseIndexList(resetIndicesJson);
     const windowIndices = parseIndexList(windowIndicesJson);
+    const requestReceivedAt = Date.now();
     setTimeout(() => {
       if (version !== data.version) {
         return;
       }
 
+      const renderStartedAt = Date.now();
       data.resetRenderedItems(resetIndices);
       const items = data.renderItems(indices);
+      const renderFinishedAt = Date.now();
       setRenderedItems({
         version,
         requestId,
+        jsRenderDurationMs: renderFinishedAt - renderStartedAt,
+        jsTotalDurationMs: renderFinishedAt - requestReceivedAt,
         items,
       });
       fabricWindow.mergeItems(items, windowIndices);

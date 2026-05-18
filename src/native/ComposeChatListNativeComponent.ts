@@ -47,6 +47,8 @@ export type RenderedChatItem = {
 export type ComposeChatListRenderedItems = {
   version: number;
   requestId: number;
+  jsRenderDurationMs?: number;
+  jsTotalDurationMs?: number;
   items: RenderedChatItem[];
 };
 

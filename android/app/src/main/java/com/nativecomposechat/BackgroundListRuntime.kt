@@ -3,6 +3,8 @@ package com.nativecomposechat
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactRootView
@@ -28,6 +30,7 @@ import java.lang.ref.WeakReference
 object BackgroundListRuntime {
   private const val REQUEST_EVENT = "ComposeChatBackgroundRequestItems"
   private const val DATA_STATE_EVENT = "ComposeChatBackgroundDataState"
+  private const val MESSAGE_LOAD_LOG_TAG = "MessageLoadTelemetry"
 
   private var host: ReactHost? = null
   private var module: BackgroundListBridgeModule? = null
@@ -91,6 +94,26 @@ object BackgroundListRuntime {
       windowIndices: List<Int>,
       resetIndices: List<Int> = emptyList(),
   ) {
+    val nativeDispatchUptimeMs = SystemClock.uptimeMillis().toDouble()
+    if (readyLists.contains(listName)) {
+      val didScheduleDirect =
+          module?.requestItemsDirect(
+              listName,
+              requestId,
+              version,
+              nativeDispatchUptimeMs,
+              indices.toIntArray(),
+              windowIndices.toIntArray(),
+              resetIndices.toIntArray(),
+          ) == true
+      if (didScheduleDirect) {
+        Log.i(
+            MESSAGE_LOAD_LOG_TAG,
+            "dispatch path=direct requestId=$requestId version=$version count=${indices.size} missing=$indices window=$windowIndices reset=$resetIndices")
+        return
+      }
+    }
+
     val payload = Arguments.createMap()
     val indicesArray = Arguments.createArray()
     val windowIndicesArray = Arguments.createArray()
@@ -101,14 +124,21 @@ object BackgroundListRuntime {
     payload.putString("listName", listName)
     payload.putInt("requestId", requestId)
     payload.putInt("version", version)
+    payload.putDouble("nativeDispatchUptimeMs", nativeDispatchUptimeMs)
     payload.putArray("indices", indicesArray)
     payload.putArray("windowIndices", windowIndicesArray)
     payload.putArray("resetIndices", resetIndicesArray)
+    Log.i(
+        MESSAGE_LOAD_LOG_TAG,
+        "dispatch path=event requestId=$requestId version=$version count=${indices.size} missing=$indices window=$windowIndices reset=$resetIndices")
     emitOrQueue(REQUEST_EVENT, payload)
   }
 
   fun deliverRenderedItems(listName: String, payload: ReadableMap) {
-    views[listName]?.get()?.post { views[listName]?.get()?.applyRenderedItems(payload) }
+    val nativeReceivedAtMs = SystemClock.uptimeMillis()
+    views[listName]?.get()?.post {
+      views[listName]?.get()?.applyRenderedItems(payload, nativeReceivedAtMs)
+    }
   }
 
   fun attachFabricChild(listName: String, child: ComposeChatListItemView) {

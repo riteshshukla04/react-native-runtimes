@@ -20,9 +20,14 @@ type BackgroundRequest = {
   listName: string;
   requestId: number;
   version: number;
+  nativeDispatchUptimeMs?: number;
   indices: number[];
   windowIndices?: number[];
   resetIndices?: number[];
+};
+
+type PendingBackgroundRequest = BackgroundRequest & {
+  receivedAt: number;
 };
 
 type BackgroundDataState = {
@@ -30,10 +35,15 @@ type BackgroundDataState = {
   state: ComposeChatListDataState;
 };
 
+type DirectBackgroundRequestGlobal = typeof globalThis & {
+  __composeChatBackgroundRequestHandler?: (event: BackgroundRequest) => void;
+};
+
 const {BackgroundListBridge} = NativeModules;
 const backgroundEvents = new NativeEventEmitter(BackgroundListBridge);
 
 const sourcesByListName = new Map<string, VersionedChatDataSource>();
+const BACKGROUND_REQUEST_COALESCE_MS = 0;
 
 export default function BackgroundChatRenderer({
   listName = 'background-chat-list',
@@ -42,6 +52,8 @@ export default function BackgroundChatRenderer({
 }) {
   const sourceRef = useRef(getSource(listName));
   const appliedFabricSeqRef = useRef(0);
+  const pendingRequestRef = useRef<PendingBackgroundRequest | null>(null);
+  const requestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     applyOps,
     items: fabricItems,
@@ -51,7 +63,6 @@ export default function BackgroundChatRenderer({
 
   useEffect(() => {
     sourceRef.current = getSource(listName);
-    BackgroundListBridge.rendererReady(listName);
 
     const dataSubscription = backgroundEvents.addListener(
       'ComposeChatBackgroundDataState',
@@ -75,30 +86,79 @@ export default function BackgroundChatRenderer({
       },
     );
 
-    const requestSubscription = backgroundEvents.addListener(
-      'ComposeChatBackgroundRequestItems',
-      (event: BackgroundRequest) => {
+    const handleBackgroundRequest = (event: BackgroundRequest) => {
         if (event.listName !== listName) {
           return;
         }
 
-        const source = sourceRef.current;
-        if (event.version !== source.version) {
+        if (event.version !== sourceRef.current.version) {
           return;
         }
 
-        source.resetRenderedItems(event.resetIndices ?? []);
-        const items = source.renderItems(event.indices);
-        BackgroundListBridge.deliverRenderedItems(listName, {
-          version: event.version,
-          requestId: event.requestId,
-          items,
-        });
-        mergeItems(items, event.windowIndices);
-      },
+        const receivedAt = Date.now();
+        const pendingRequest = pendingRequestRef.current;
+        pendingRequestRef.current =
+          pendingRequest == null
+            ? {...event, receivedAt}
+            : mergePendingRequest(pendingRequest, event, receivedAt);
+
+        const flushPendingRequest = () => {
+          const request = pendingRequestRef.current;
+          pendingRequestRef.current = null;
+          if (request == null) {
+            return;
+          }
+
+          const source = sourceRef.current;
+          if (request.version !== source.version) {
+            return;
+          }
+
+          const renderStartedAt = Date.now();
+          source.resetRenderedItems(request.resetIndices ?? []);
+          const items = source.renderItems(request.indices);
+          const renderFinishedAt = Date.now();
+          BackgroundListBridge.deliverRenderedItems(listName, {
+            version: request.version,
+            requestId: request.requestId,
+            nativeDispatchUptimeMs: request.nativeDispatchUptimeMs,
+            jsRenderDurationMs: renderFinishedAt - renderStartedAt,
+            jsTotalDurationMs: renderFinishedAt - request.receivedAt,
+            items,
+          });
+          mergeItems(items, request.windowIndices);
+        };
+
+        if (BACKGROUND_REQUEST_COALESCE_MS <= 0) {
+          flushPendingRequest();
+          return;
+        }
+
+        if (requestTimerRef.current != null) {
+          return;
+        }
+
+        requestTimerRef.current = setTimeout(() => {
+          requestTimerRef.current = null;
+          flushPendingRequest();
+        }, BACKGROUND_REQUEST_COALESCE_MS);
+    };
+    const directRequestGlobal = globalThis as DirectBackgroundRequestGlobal;
+    directRequestGlobal.__composeChatBackgroundRequestHandler =
+      handleBackgroundRequest;
+    BackgroundListBridge.rendererReady(listName);
+    const requestSubscription = backgroundEvents.addListener(
+      'ComposeChatBackgroundRequestItems',
+      handleBackgroundRequest,
     );
 
     return () => {
+      delete directRequestGlobal.__composeChatBackgroundRequestHandler;
+      if (requestTimerRef.current != null) {
+        clearTimeout(requestTimerRef.current);
+        requestTimerRef.current = null;
+      }
+      pendingRequestRef.current = null;
       dataSubscription.remove();
       requestSubscription.remove();
     };
@@ -130,6 +190,44 @@ function getSource(listName: string) {
     sourcesByListName.set(listName, source);
   }
   return source;
+}
+
+function mergePendingRequest(
+  previous: PendingBackgroundRequest,
+  next: BackgroundRequest,
+  receivedAt: number,
+): PendingBackgroundRequest {
+  const nextWindow = new Set(next.windowIndices ?? next.indices);
+  const carriedIndices = previous.indices.filter(index => nextWindow.has(index));
+  const carriedResetIndices = (previous.resetIndices ?? []).filter(index =>
+    nextWindow.has(index),
+  );
+
+  return {
+    ...next,
+    indices: mergeUniqueIndices(carriedIndices, next.indices),
+    resetIndices: mergeUniqueIndices(carriedResetIndices, next.resetIndices ?? []),
+    receivedAt: Math.min(previous.receivedAt, receivedAt),
+  };
+}
+
+function mergeUniqueIndices(first: number[], second: number[]) {
+  if (first.length === 0) {
+    return second;
+  }
+  if (second.length === 0) {
+    return first;
+  }
+  const seen = new Set<number>();
+  const merged: number[] = [];
+  for (const index of [...first, ...second]) {
+    if (seen.has(index)) {
+      continue;
+    }
+    seen.add(index);
+    merged.push(index);
+  }
+  return merged;
 }
 
 const styles = StyleSheet.create({
