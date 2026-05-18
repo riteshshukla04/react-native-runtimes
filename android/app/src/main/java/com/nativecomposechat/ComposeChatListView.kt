@@ -198,11 +198,15 @@ private fun messageLoadLog(message: String) {
 }
 
 private fun fabricHostInventoryLog(message: String) {
-  Log.i(FABRIC_HOST_INVENTORY_LOG_TAG, message)
+  if (Log.isLoggable(FABRIC_HOST_INVENTORY_LOG_TAG, Log.DEBUG)) {
+    Log.d(FABRIC_HOST_INVENTORY_LOG_TAG, message)
+  }
 }
 
 private fun visibleWindowLog(message: String) {
-  Log.i(VISIBLE_WINDOW_LOG_TAG, message)
+  if (Log.isLoggable(VISIBLE_WINDOW_LOG_TAG, Log.DEBUG)) {
+    Log.d(VISIBLE_WINDOW_LOG_TAG, message)
+  }
 }
 
 private fun ComposeChatListItemView.debugLabel(): String =
@@ -309,8 +313,27 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    layoutChildrenToBounds(width.coerceAtLeast(1), height.coerceAtLeast(1))
+    if (needsChildFrameRepair(width.coerceAtLeast(1), height.coerceAtLeast(1))) {
+      layoutChildrenToBounds(width.coerceAtLeast(1), height.coerceAtLeast(1))
+    }
     super.dispatchDraw(canvas)
+  }
+
+  fun needsChildFrameRepair(width: Int = this.width, height: Int = this.height): Boolean {
+    val repairWidth = width.coerceAtLeast(1)
+    val repairHeight = height.coerceAtLeast(1)
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      if (child.left != 0 ||
+          child.top != 0 ||
+          child.right != repairWidth ||
+          child.bottom != repairHeight ||
+          child.translationX != 0f ||
+          child.translationY != 0f) {
+        return true
+      }
+    }
+    return false
   }
 
   private fun layoutChildrenToBounds(width: Int, height: Int) {
@@ -319,8 +342,8 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
       if (child.left != 0 || child.top != 0 || child.right != width || child.bottom != height) {
         child.layout(0, 0, width, height)
       }
-      child.translationX = 0f
-      child.translationY = 0f
+      if (child.translationX != 0f) child.translationX = 0f
+      if (child.translationY != 0f) child.translationY = 0f
     }
   }
 }
@@ -1236,7 +1259,9 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     if (cell.parent === holder && holder.childCount == 1) {
       hostLog("holderAttachSkip holderChildren=${holder.childCount} ${cell.diagnosticLabel()}")
       fabricMountLog("holderAttachSkip ${cell.debugLabel()} holderChildren=${holder.childCount}")
-      refreshFabricCellTree(cell, "holderAttachSkip")
+      if (holder.needsChildFrameRepair() || cell.needsFabricChildLayout()) {
+        refreshFabricCellTree(cell, "holderAttachSkipRepair")
+      }
       logFabricInventory("holderAttachSkip index=${cell.activeItemIndex()}")
       return
     }

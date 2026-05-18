@@ -386,6 +386,7 @@ const fabricItemHostStyle = {
 };
 
 function logReactRender(message: string) {
-  // Intentionally visible in logcat under ReactNativeJS for release perf debugging.
-  console.log(`[FabricReactRender] ${message}`);
+  if (__DEV__) {
+    console.log(`[FabricReactRender] ${message}`);
+  }
 }

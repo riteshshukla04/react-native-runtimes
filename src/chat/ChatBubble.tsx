@@ -197,5 +197,7 @@ const styles = StyleSheet.create({
 });
 
 function logReactRender(message: string) {
-  console.log(`[FabricReactRender] ${message}`);
+  if (__DEV__) {
+    console.log(`[FabricReactRender] ${message}`);
+  }
 }

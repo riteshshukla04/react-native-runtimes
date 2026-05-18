@@ -181,7 +181,9 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    layoutFabricChildren(max(1, width), max(1, height))
+    if (needsFabricChildLayout()) {
+      layoutFabricChildren(max(1, width), max(1, height))
+    }
     super.dispatchDraw(canvas)
   }
 
@@ -197,9 +199,24 @@ class ComposeChatListItemView(context: Context) : FrameLayout(context) {
       if (child.left != 0 || child.top != 0 || child.right != width || child.bottom != height) {
         child.layout(0, 0, width, height)
       }
-      child.translationX = 0f
-      child.translationY = 0f
+      if (child.translationX != 0f) child.translationX = 0f
+      if (child.translationY != 0f) child.translationY = 0f
     }
+  }
+
+  fun needsFabricChildLayout(width: Int = max(1, this.width), height: Int = max(1, this.height)): Boolean {
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      if (child.left != 0 ||
+          child.top != 0 ||
+          child.right != width ||
+          child.bottom != height ||
+          child.translationX != 0f ||
+          child.translationY != 0f) {
+        return true
+      }
+    }
+    return false
   }
 
   fun reportMeasuredContentHeight(source: String, force: Boolean = false) {
