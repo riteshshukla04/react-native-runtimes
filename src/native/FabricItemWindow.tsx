@@ -1,5 +1,12 @@
-import {useCallback, useEffect, useRef, useState, type ReactElement} from 'react';
-import {View, type LayoutChangeEvent, type ViewStyle} from 'react-native';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
+import {View, type LayoutChangeEvent} from 'react-native';
 import {
   ComposeChatListItemNativeComponent,
   type ComposeChatListDataOp,
@@ -16,7 +23,7 @@ export type FabricItemWindowRenderer = (
 ) => ReactElement | null;
 
 const MAX_FABRIC_ITEMS = 48;
-const MIN_RECYCLE_SLOTS_PER_TYPE = 24;
+const MIN_RECYCLE_SLOTS_PER_TYPE = 0;
 
 export function useFabricItemWindow() {
   const [items, setItems] = useState<RenderedChatItem[]>([]);
@@ -91,7 +98,10 @@ export function FabricItemWindow({
     });
   }, [items]);
 
-  function handleItemLayout(item: RenderedChatItem, event: LayoutChangeEvent) {
+  const handleItemLayout = useCallback(function handleItemLayout(
+    item: RenderedChatItem,
+    event: LayoutChangeEvent,
+  ) {
     const height = Math.ceil(event.nativeEvent.layout.height);
     if (height <= 0) {
       return;
@@ -103,7 +113,7 @@ export function FabricItemWindow({
       }
       return {...previousHeights, [item.id]: height};
     });
-  }
+  }, []);
 
   const renderCells = assignStickySlots(
     slotAssignmentsRef.current,
@@ -115,38 +125,78 @@ export function FabricItemWindow({
     <>
       {renderCells.map(({item, slot, type}) => {
         const hostSlot = `${type}:${slot}`;
-        const itemId = item?.id ?? `pool:${hostSlot}`;
-        const itemIndex = item?.index ?? -1;
-        const measuredHeight = item == null ? 0 : itemHeights[item.id] ?? 0;
-        const messagePreview =
-          item == null ? 'inactive' : `${item.author}: ${item.body.slice(0, 80)}`;
+        const messagePreview = `${item.author}: ${item.body.slice(0, 80)}`;
         return (
-          <ComposeChatListItemNativeComponent
+          <FabricItemCell
             contentType={type}
             hostSlot={hostSlot}
-            itemId={itemId}
-            itemIndex={itemIndex}
+            item={item}
+            itemId={item.id}
+            itemIndex={item.index}
             key={`${type}:${slot}`}
-            measuredHeight={measuredHeight}
+            measuredHeight={itemHeights[item.id] ?? 0}
             messagePreview={messagePreview}
-            renderVersion={item?.renderVersion ?? 0}
-            style={item == null ? inactiveFabricItemHostStyle : fabricItemHostStyle}>
-            <View
-              collapsable={false}
-              onLayout={event => {
-                if (item != null) {
-                  handleItemLayout(item, event);
-                }
-              }}
-              style={item == null ? inactiveFabricItemHostStyle : fabricItemHostStyle}>
-              {item == null ? null : renderItem({item, index: item.index})}
-            </View>
-          </ComposeChatListItemNativeComponent>
+            onItemLayout={handleItemLayout}
+            renderItem={renderItem}
+          />
         );
       })}
     </>
   );
 }
+
+const FabricItemCell = memo(
+  function FabricItemCell({
+    contentType,
+    hostSlot,
+    item,
+    itemId,
+    itemIndex,
+    measuredHeight,
+    messagePreview,
+    onItemLayout,
+    renderItem,
+  }: {
+    contentType: string;
+    hostSlot: string;
+    item: RenderedChatItem;
+    itemId: string;
+    itemIndex: number;
+    measuredHeight: number;
+    messagePreview: string;
+    onItemLayout: (item: RenderedChatItem, event: LayoutChangeEvent) => void;
+    renderItem: FabricItemWindowRenderer;
+  }) {
+    return (
+      <ComposeChatListItemNativeComponent
+        contentType={contentType}
+        hostSlot={hostSlot}
+        itemId={itemId}
+        itemIndex={itemIndex}
+        measuredHeight={measuredHeight}
+        messagePreview={messagePreview}
+        renderVersion={item.renderVersion}
+        style={fabricItemHostStyle}>
+        <View
+          collapsable={false}
+          onLayout={event => {
+            onItemLayout(item, event);
+          }}
+          style={fabricItemHostStyle}>
+          {renderItem({item, index: item.index})}
+        </View>
+      </ComposeChatListItemNativeComponent>
+    );
+  },
+  (previous, next) =>
+    previous.contentType === next.contentType &&
+    previous.hostSlot === next.hostSlot &&
+    previous.item === next.item &&
+    previous.itemId === next.itemId &&
+    previous.itemIndex === next.itemIndex &&
+    previous.measuredHeight === next.measuredHeight &&
+    previous.messagePreview === next.messagePreview,
+);
 
 export function maxDataOpSeq(ops: ComposeChatListDataOp[]) {
   return ops.reduce((maxSeq, op) => Math.max(maxSeq, op.seq), 0);
@@ -209,11 +259,6 @@ function assignStickySlots(
     slot: number;
     item: RenderedChatItem;
   }> = [];
-  const inactiveCells: Array<{
-    type: string;
-    slot: number;
-    item: RenderedChatItem | null;
-  }> = [];
   const allTypes = new Set([
     ...Object.keys(poolSizes),
     ...Array.from(itemsByType.keys()),
@@ -256,22 +301,13 @@ function assignStickySlots(
     for (let slot = 0; slot < assignments.length; slot += 1) {
       const assignedId = assignments[slot];
       const item = assignedId == null ? null : typedItemsById.get(assignedId) ?? null;
-      if (item == null) {
-        inactiveCells.push({type, slot, item: null});
-      } else {
+      if (item != null) {
         activeCells.push({type, slot, item});
       }
     }
   }
 
-  if (activeCells.length >= MAX_FABRIC_ITEMS) {
-    return activeCells.slice(0, MAX_FABRIC_ITEMS);
-  }
-
-  return [
-    ...activeCells,
-    ...inactiveCells.slice(0, MAX_FABRIC_ITEMS - activeCells.length),
-  ];
+  return activeCells.slice(0, MAX_FABRIC_ITEMS);
 }
 
 function capPoolSizes(
@@ -351,9 +387,4 @@ function applyFabricDataOps(
 const fabricItemHostStyle = {
   display: 'flex' as const,
   width: '100%' as const,
-};
-
-const inactiveFabricItemHostStyle: ViewStyle = {
-  display: 'none',
-  width: '100%',
 };
