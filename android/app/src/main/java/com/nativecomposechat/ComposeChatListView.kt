@@ -277,6 +277,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     const val WINDOW_AHEAD = 8
     const val ACTIVE_SCROLL_WINDOW_BEHIND = 1
     const val ACTIVE_SCROLL_WINDOW_AHEAD = 2
+    const val STALE_REQUEST_MS = 2_000L
   }
 
   private val renderedRows = mutableStateMapOf<Int, RenderedChatItem>()
@@ -286,6 +287,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   private val fabricChildren = mutableListOf<ComposeChatListItemView>()
   private val dirtyRows = mutableSetOf<Int>()
   private val pendingRequests = mutableMapOf<String, Long>()
+  private val pendingRequestBatches = mutableMapOf<Int, List<Int>>()
   private var visibleRequestWindow: List<Int> = emptyList()
   private var itemCount by mutableIntStateOf(0)
   private var dataVersion by mutableIntStateOf(0)
@@ -310,6 +312,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   private var placeholderSpec by mutableStateOf(PlaceholderSpec.Default)
   private var visibleSpacingStatus by mutableStateOf("visible-list-spacing-pending")
   private var lastDispatchedWindowKey = ""
+  private var staleRequestCheckScheduled = false
 
   init {
     val composeView =
@@ -505,6 +508,8 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       clearRenderedRows()
       dirtyRows.clear()
       pendingRequests.clear()
+      pendingRequestBatches.clear()
+      staleRequestCheckScheduled = false
       lastDispatchedWindowKey = ""
       if (ops != null) {
         lastAppliedSeq = max(lastAppliedSeq, maxSeq(ops))
@@ -534,6 +539,8 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val incomingVersion = renderedItems.optInt("version", dataVersion)
     if (incomingVersion != dataVersion) return
 
+    val incomingRequestId = renderedItems.optInt("requestId", -1)
+    val requestedIndices = pendingRequestBatches.remove(incomingRequestId).orEmpty()
     val items = renderedItems.optArray("items") ?: return
     for (i in 0 until items.size()) {
       val row = items.getMap(i) ?: continue
@@ -555,6 +562,9 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
           ),
       )
       dirtyRows.remove(index)
+      pendingRequests.remove(requestKey(incomingVersion, index))
+    }
+    requestedIndices.forEach { index ->
       pendingRequests.remove(requestKey(incomingVersion, index))
     }
     pruneToActiveWindow()
@@ -600,11 +610,13 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
           clearRenderedRows()
           dirtyRows.clear()
           clearFabricCellHeights()
+          pendingRequestBatches.clear()
         }
       }
       lastAppliedSeq = seq
     }
     pendingRequests.clear()
+    pendingRequestBatches.clear()
     lastDispatchedWindowKey = ""
   }
 
@@ -1170,6 +1182,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val activeIndices = indices.filter { it in 0 until itemCount }.distinct()
     visibleRequestWindow = activeIndices
     pruneToActiveWindow()
+    pruneStalePendingRequests()
     val windowKey = activeIndices.joinToString(",")
 
     resetIndices.forEach { index ->
@@ -1196,6 +1209,9 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
           }
         }
     if (missing.isEmpty()) {
+      if (unresolved.isNotEmpty()) {
+        scheduleStaleRequestCheck()
+      }
       if (unresolved.isEmpty() && windowKey != lastDispatchedWindowKey) {
         dispatchItemRequest(emptyList(), activeIndices, emptySet())
         lastDispatchedWindowKey = windowKey
@@ -1204,6 +1220,7 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     }
 
     dispatchItemRequest(missing, activeIndices, resetIndices)
+    scheduleStaleRequestCheck()
     lastDispatchedWindowKey = windowKey
   }
 
@@ -1213,6 +1230,9 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       resetIndices: Set<Int>,
   ) {
     val nextRequestId = requestId++
+    if (missing.isNotEmpty()) {
+      pendingRequestBatches[nextRequestId] = missing
+    }
     requestLog(
         "dispatch requestId=$nextRequestId version=$dataVersion " +
             "missing=[${missing.joinToString(",")}] window=[${activeIndices.joinToString(",")}] " +
@@ -1283,6 +1303,48 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         pendingRequests.remove(key)
       }
     }
+    pendingRequestBatches.keys.toList().forEach { requestId ->
+      if (pendingRequestBatches[requestId]?.isEmpty() != false) {
+        pendingRequestBatches.remove(requestId)
+      }
+    }
+  }
+
+  private fun pruneStalePendingRequests() {
+    val now = SystemClock.uptimeMillis()
+    pendingRequests.keys.toList().forEach { key ->
+      val requestedAt = pendingRequests[key] ?: return@forEach
+      val version = key.substringBefore(':', "").toIntOrNull()
+      if (version == null || version != dataVersion || now - requestedAt > STALE_REQUEST_MS) {
+        pendingRequests.remove(key)
+      }
+    }
+    val pendingKeys = pendingRequests.keys.toSet()
+    pendingRequestBatches.keys.toList().forEach { requestId ->
+      val remaining = pendingRequestBatches[requestId]
+          ?.filter { index -> requestKey(dataVersion, index) in pendingKeys }
+          .orEmpty()
+      if (remaining.isEmpty()) {
+        pendingRequestBatches.remove(requestId)
+      } else {
+        pendingRequestBatches[requestId] = remaining
+      }
+    }
+  }
+
+  private fun scheduleStaleRequestCheck() {
+    if (staleRequestCheckScheduled || pendingRequests.isEmpty()) return
+
+    staleRequestCheckScheduled = true
+    postDelayed(
+        {
+          staleRequestCheckScheduled = false
+          if (pendingRequests.isNotEmpty() && visibleRequestWindow.isNotEmpty()) {
+            requestItemsForWindow(visibleRequestWindow)
+          }
+        },
+        STALE_REQUEST_MS,
+    )
   }
 
   private fun spacingStatusFor(layout: VisibleListLayout): String {

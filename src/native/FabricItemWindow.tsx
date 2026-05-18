@@ -214,7 +214,12 @@ function assignStickySlots(
   itemsByType: Map<string, RenderedChatItem[]>,
   poolSizes: Record<string, number>,
 ) {
-  const renderCells: Array<{
+  const activeCells: Array<{
+    type: string;
+    slot: number;
+    item: RenderedChatItem;
+  }> = [];
+  const inactiveCells: Array<{
     type: string;
     slot: number;
     item: RenderedChatItem | null;
@@ -260,15 +265,23 @@ function assignStickySlots(
     assignmentsByType[type] = assignments;
     for (let slot = 0; slot < assignments.length; slot += 1) {
       const assignedId = assignments[slot];
-      renderCells.push({
-        type,
-        slot,
-        item: assignedId == null ? null : typedItemsById.get(assignedId) ?? null,
-      });
+      const item = assignedId == null ? null : typedItemsById.get(assignedId) ?? null;
+      if (item == null) {
+        inactiveCells.push({type, slot, item: null});
+      } else {
+        activeCells.push({type, slot, item});
+      }
     }
   }
 
-  return renderCells.slice(0, MAX_FABRIC_ITEMS);
+  if (activeCells.length >= MAX_FABRIC_ITEMS) {
+    return activeCells.slice(0, MAX_FABRIC_ITEMS);
+  }
+
+  return [
+    ...activeCells,
+    ...inactiveCells.slice(0, MAX_FABRIC_ITEMS - activeCells.length),
+  ];
 }
 
 function capPoolSizes(
@@ -346,6 +359,7 @@ function applyFabricDataOps(
 }
 
 const fabricItemHostStyle = {
+  display: 'flex' as const,
   width: '100%' as const,
 };
 
