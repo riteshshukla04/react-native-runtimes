@@ -22,12 +22,27 @@ class SecondRuntimeSurfaceManager :
 
   @ReactProp(name = "appName")
   override fun setAppName(view: SecondRuntimeSurfaceView, value: String?) {
-    view.setAppName(value ?: "ComposeChatSecondRuntimeRnList")
+    view.setAppName(value ?: "ThreadedRuntimeHost")
+  }
+
+  @ReactProp(name = "componentName")
+  override fun setComponentName(view: SecondRuntimeSurfaceView, value: String?) {
+    view.setComponentName(value ?: "")
+  }
+
+  @ReactProp(name = "initialPropsJson")
+  override fun setInitialPropsJson(view: SecondRuntimeSurfaceView, value: String?) {
+    view.setInitialPropsJson(value ?: "{}")
   }
 
   @ReactProp(name = "mode")
   override fun setMode(view: SecondRuntimeSurfaceView, value: String?) {
     view.setMode(value ?: "flashlist")
+  }
+
+  @ReactProp(name = "runtimeName")
+  override fun setRuntimeName(view: SecondRuntimeSurfaceView, value: String?) {
+    view.setRuntimeName(value ?: BackgroundListRuntime.DEFAULT_RUNTIME_NAME)
   }
 
   @ReactProp(name = "blockStatus")

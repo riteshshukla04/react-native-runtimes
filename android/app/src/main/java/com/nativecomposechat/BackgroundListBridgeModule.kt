@@ -2,6 +2,7 @@ package com.nativecomposechat
 
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -88,6 +89,43 @@ class BackgroundListBridgeModule(private val reactContext: ReactApplicationConte
     val payload = Arguments.createMap()
     payload.putString("listName", listName)
     BackgroundListRuntime.markRendererReady(listName)
+  }
+
+  @ReactMethod
+  fun preloadRuntime(runtimeName: String, promise: Promise) {
+    try {
+      BackgroundListRuntime.preloadRuntime(reactContext, runtimeName)
+      promise.resolve(null)
+    } catch (exception: Exception) {
+      promise.reject("E_PRELOAD_RUNTIME", exception)
+    }
+  }
+
+  @ReactMethod
+  fun destroyRuntime(runtimeName: String, promise: Promise) {
+    try {
+      BackgroundListRuntime.destroyRuntime(runtimeName)
+      promise.resolve(null)
+    } catch (exception: Exception) {
+      promise.reject("E_DESTROY_RUNTIME", exception)
+    }
+  }
+
+  @ReactMethod
+  fun destroyAllRuntimes(promise: Promise) {
+    try {
+      BackgroundListRuntime.destroyAllRuntimes()
+      promise.resolve(null)
+    } catch (exception: Exception) {
+      promise.reject("E_DESTROY_ALL_RUNTIMES", exception)
+    }
+  }
+
+  @ReactMethod
+  fun getRuntimeNames(promise: Promise) {
+    val names = Arguments.createArray()
+    BackgroundListRuntime.runtimeNames().forEach { names.pushString(it) }
+    promise.resolve(names)
   }
 
   @ReactMethod

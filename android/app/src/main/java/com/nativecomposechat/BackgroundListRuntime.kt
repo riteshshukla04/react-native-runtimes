@@ -2,6 +2,7 @@ package com.nativecomposechat
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -30,11 +31,12 @@ import java.io.File
 import java.lang.ref.WeakReference
 
 object BackgroundListRuntime {
+  const val DEFAULT_RUNTIME_NAME = "background-list"
   private const val REQUEST_EVENT = "ComposeChatBackgroundRequestItems"
   private const val DATA_STATE_EVENT = "ComposeChatBackgroundDataState"
   private const val MESSAGE_LOAD_LOG_TAG = "MessageLoadTelemetry"
 
-  private var host: ReactHost? = null
+  private val hosts = mutableMapOf<String, ReactHost>()
   private var module: BackgroundListBridgeModule? = null
   private val views = mutableMapOf<String, WeakReference<ComposeChatListView>>()
   private val pendingEvents = mutableListOf<Pair<String, ReadableMap>>()
@@ -58,7 +60,7 @@ object BackgroundListRuntime {
   ): View {
     val props = Bundle()
     props.putString("listName", listName)
-    val reactSurface = createSurface(reactContext, appName, props)
+    val reactSurface = createSurface(DEFAULT_RUNTIME_NAME, reactContext, appName, props)
     reactSurface.view?.visibility = View.INVISIBLE
     reactSurface.start()
     return checkNotNull(reactSurface.view)
@@ -66,10 +68,27 @@ object BackgroundListRuntime {
 
   @OptIn(UnstableReactNativeAPI::class)
   fun createSurface(
+      runtimeName: String,
       reactContext: ThemedReactContext,
       appName: String,
       props: Bundle,
-  ): ReactSurface = ensureHost(reactContext).createSurface(reactContext, appName, props)
+  ): ReactSurface = ensureHost(reactContext.applicationContext, reactContext.currentActivity, runtimeName)
+      .createSurface(reactContext, appName, props)
+
+  fun preloadRuntime(context: Context, runtimeName: String) {
+    ensureHost(context.applicationContext, null, runtimeName).start()
+  }
+
+  fun destroyRuntime(runtimeName: String) {
+    hosts.remove(runtimeName)?.destroy("destroyRuntime($runtimeName)", null)
+  }
+
+  fun destroyAllRuntimes() {
+    val names = hosts.keys.toList()
+    names.forEach { destroyRuntime(it) }
+  }
+
+  fun runtimeNames(): List<String> = hosts.keys.toList()
 
   fun attachModule(nextModule: BackgroundListBridgeModule) {
     module = nextModule
@@ -164,17 +183,20 @@ object BackgroundListRuntime {
   }
 
   @OptIn(UnstableReactNativeAPI::class, FrameworkAPI::class)
-  private fun ensureHost(reactContext: ThemedReactContext): ReactHost {
-    host?.let { return it }
+  private fun ensureHost(
+      context: Context,
+      activity: Activity?,
+      runtimeName: String,
+  ): ReactHost {
+    hosts[runtimeName]?.let { return it }
 
-    val activity = reactContext.currentActivity
     val componentFactory = ComponentFactory()
     DefaultComponentsRegistry.register(componentFactory)
 
     val delegate =
         DefaultReactHostDelegate(
             jsMainModulePath = "index",
-            jsBundleLoader = BackgroundListEnvironmentBundleLoader(reactContext.applicationContext),
+            jsBundleLoader = BackgroundListEnvironmentBundleLoader(context, runtimeName),
             reactPackages =
                 listOf(MainReactPackage(), BackgroundListRendererPackage(), EaseViewPackage()),
             jsRuntimeFactory = HermesInstance(),
@@ -184,7 +206,7 @@ object BackgroundListRuntime {
 
     val nextHost =
         ReactHostImpl(
-            reactContext.applicationContext,
+            context,
             delegate,
             componentFactory,
             true,
@@ -195,7 +217,7 @@ object BackgroundListRuntime {
       nextHost.onHostResume(activity, activity as? DefaultHardwareBackBtnHandler)
     }
 
-    return nextHost.also { host = it }
+    return nextHost.also { hosts[runtimeName] = it }
   }
 
   private fun emitOrQueue(eventName: String, payload: ReadableMap) {
@@ -226,9 +248,10 @@ object BackgroundListRuntime {
 
 private class BackgroundListEnvironmentBundleLoader(
     private val context: android.content.Context,
+    private val runtimeName: String,
 ) : JSBundleLoader() {
   override fun loadScript(delegate: JSBundleLoaderDelegate): String {
-    val prelude = File(context.cacheDir, "compose-chat-list-env.js")
+    val prelude = File(context.cacheDir, "compose-chat-list-env-${safeFileName(runtimeName)}.js")
     prelude.writeText(
         """
         var __composeChatGlobal =
@@ -236,7 +259,11 @@ private class BackgroundListEnvironmentBundleLoader(
         __composeChatGlobal.global = __composeChatGlobal;
         __composeChatGlobal.globalThis = __composeChatGlobal;
         __composeChatGlobal._is_it_a_list_env = true;
-        __composeChatGlobal.__COMPOSE_CHAT_LIST_ENV__ = {kind: 'background-list', version: 1};
+        __composeChatGlobal.__COMPOSE_CHAT_LIST_ENV__ = {
+          kind: 'background-list',
+          runtimeName: ${jsString(runtimeName)},
+          version: 1
+        };
         """.trimIndent(),
     )
 
@@ -245,4 +272,10 @@ private class BackgroundListEnvironmentBundleLoader(
     delegate.loadScriptFromAssets(context.assets, "assets://index.android.bundle", true)
     return "assets://index.android.bundle"
   }
+
+  private fun jsString(value: String): String =
+      "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+  private fun safeFileName(value: String): String =
+      value.replace(Regex("[^A-Za-z0-9_.-]"), "_")
 }

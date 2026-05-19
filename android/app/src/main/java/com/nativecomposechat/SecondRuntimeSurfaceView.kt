@@ -13,9 +13,12 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     const val LOG_TAG = "RuntimeCheck"
   }
 
-  private var appName = "ComposeChatSecondRuntimeRnList"
-  private var mode = "flashlist"
+  private var appName = "ThreadedRuntimeHost"
+  private var mode = ""
   private var blockStatus = "idle"
+  private var componentName = ""
+  private var initialPropsJson = "{}"
+  private var runtimeName = BackgroundListRuntime.DEFAULT_RUNTIME_NAME
   private var surfaceKey = ""
   private var reactSurface: ReactSurface? = null
 
@@ -25,9 +28,27 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     restartSurfaceIfAttached()
   }
 
+  fun setComponentName(nextComponentName: String) {
+    if (componentName == nextComponentName) return
+    componentName = nextComponentName
+    restartSurfaceIfAttached()
+  }
+
+  fun setInitialPropsJson(nextInitialPropsJson: String) {
+    if (initialPropsJson == nextInitialPropsJson) return
+    initialPropsJson = nextInitialPropsJson
+    restartSurfaceIfAttached()
+  }
+
   fun setMode(nextMode: String) {
     if (mode == nextMode) return
     mode = nextMode
+    restartSurfaceIfAttached()
+  }
+
+  fun setRuntimeName(nextRuntimeName: String) {
+    if (runtimeName == nextRuntimeName) return
+    runtimeName = nextRuntimeName
     restartSurfaceIfAttached()
   }
 
@@ -37,7 +58,7 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     if (reactSurface != null) {
       Log.i(
           LOG_TAG,
-          "secondRuntimeSurface ignoreBlockStatusUpdate mode=$mode blockStatus=$blockStatus surfaceId=${reactSurface?.surfaceID}",
+          "secondRuntimeSurface ignoreBlockStatusUpdate blockStatus=$blockStatus surfaceId=${reactSurface?.surfaceID}",
       )
     }
   }
@@ -69,11 +90,14 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     val themedContext = context as? ThemedReactContext ?: return
     val props =
         Bundle().apply {
+          putString("componentName", componentName)
+          putString("initialPropsJson", initialPropsJson)
           putString("mode", mode)
           putString("blockStatus", blockStatus)
+          putString("runtimeName", runtimeName)
           putString("surfaceKey", surfaceKey)
         }
-    val surface = BackgroundListRuntime.createSurface(themedContext, appName, props)
+    val surface = BackgroundListRuntime.createSurface(runtimeName, themedContext, appName, props)
     val surfaceView = checkNotNull(surface.view)
     surfaceView.visibility = View.VISIBLE
     addView(surfaceView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -81,7 +105,8 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     reactSurface = surface
     Log.i(
         LOG_TAG,
-        "secondRuntimeSurface start appName=$appName mode=$mode surfaceKey=$surfaceKey surfaceId=${surface.surfaceID}",
+        "secondRuntimeSurface start runtimeName=$runtimeName appName=$appName " +
+            "componentName=$componentName surfaceKey=$surfaceKey surfaceId=${surface.surfaceID}",
     )
   }
 
@@ -93,7 +118,8 @@ class SecondRuntimeSurfaceView(context: Context) : FrameLayout(context) {
     reactSurface = null
     Log.i(
         LOG_TAG,
-        "secondRuntimeSurface stop appName=$appName mode=$mode surfaceKey=$surfaceKey surfaceId=${surface.surfaceID}",
+        "secondRuntimeSurface stop runtimeName=$runtimeName appName=$appName " +
+            "componentName=$componentName surfaceKey=$surfaceKey surfaceId=${surface.surfaceID}",
     )
   }
 }

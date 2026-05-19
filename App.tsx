@@ -40,7 +40,10 @@ import type {
 import VersionedComposeChatList, {
   type VersionedComposeChatListRef,
 } from './src/native/VersionedComposeChatList';
-import NativeSecondRuntimeSurface from './src/native/NativeSecondRuntimeSurface';
+import {
+  registerThreadedComponent,
+  ThreadedReactSurface,
+} from './src/threadedRuntime/ThreadedRuntime';
 
 type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
@@ -188,11 +191,13 @@ function SecondRuntimeRnListSurface({
   mode: SecondRuntimeRnBenchmarkMode;
 }) {
   return (
-    <NativeSecondRuntimeSurface
+    <ThreadedReactSurface
       accessibilityLabel={`second-runtime-${mode}`}
-      appName="ComposeChatSecondRuntimeRnList"
-      blockStatus="second-runtime"
-      mode={mode}
+      componentName="BenchmarkRnList"
+      initialProps={{
+        blockStatus: 'second-runtime',
+        mode,
+      }}
       style={styles.secondRuntimeSurface}
       surfaceKey={mode}
       testID={`second-runtime-${mode}`}
@@ -203,19 +208,23 @@ function SecondRuntimeRnListSurface({
 export function SecondRuntimeRnListApp({
   blockStatus = 'second-runtime',
   mode = 'flashlist',
+  runtimeName,
 }: {
   blockStatus?: string;
   mode?: string;
+  runtimeName?: string;
 }) {
   const normalizedMode: SecondRuntimeRnBenchmarkMode =
     mode === 'legendlist' ? 'legendlist' : 'flashlist';
   return (
     <RnListBenchmarkScreen
-      blockStatus={`${blockStatus} / ${runtimeKind()}`}
+      blockStatus={`${blockStatus} / ${runtimeName ?? runtimeKind()}`}
       mode={normalizedMode}
     />
   );
 }
+
+registerThreadedComponent('BenchmarkRnList', SecondRuntimeRnListApp);
 
 function ChatBenchmarkScreen({
   mode,

@@ -5,7 +5,10 @@ import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNati
 export interface NativeProps extends ViewProps {
   appName?: string;
   blockStatus?: string;
+  componentName?: string;
+  initialPropsJson?: string;
   mode?: string;
+  runtimeName?: string;
   surfaceKey?: string;
 }
 
