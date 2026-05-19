@@ -83,6 +83,8 @@ class BackgroundListBridgeModule(private val reactContext: ReactApplicationConte
 
   @ReactMethod
   fun rendererReady(listName: String) {
+    installDirectDispatcher(reactContext.getJSCallInvokerHolder() as? CallInvokerHolderImpl)
+    BackgroundListRuntime.attachModule(this)
     val payload = Arguments.createMap()
     payload.putString("listName", listName)
     BackgroundListRuntime.markRendererReady(listName)

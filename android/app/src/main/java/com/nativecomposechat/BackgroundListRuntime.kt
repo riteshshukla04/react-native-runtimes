@@ -74,10 +74,12 @@ object BackgroundListRuntime {
     }
   }
 
-  fun markRendererReady(listName: String) {
-    readyLists.add(listName)
-    flushPendingEvents()
-  }
+	  fun markRendererReady(listName: String) {
+	    readyLists.add(listName)
+	    flushPendingEvents()
+	  }
+
+  fun isRendererReady(listName: String): Boolean = readyLists.contains(listName)
 
   fun updateDataState(listName: String, state: ReadableMap) {
     val payload = Arguments.createMap()

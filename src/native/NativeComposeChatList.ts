@@ -4,6 +4,7 @@ import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNati
 // eslint-disable-next-line @react-native/no-deep-imports
 import codegenNativeCommands from 'react-native/Libraries/Utilities/codegenNativeCommands';
 import type {
+  Double,
   DirectEventHandler,
   Int32,
   WithDefault,
@@ -69,6 +70,18 @@ type NativeRenderedChatItem = Readonly<{
 type NativeRenderedItems = Readonly<{
   version: Int32;
   requestId: Int32;
+  nativeDispatchUptimeMs?: Double;
+  jsRenderDurationMs?: Int32;
+  jsTotalDurationMs?: Int32;
+  items: ReadonlyArray<NativeRenderedChatItem>;
+  responseSeq?: Int32;
+  responses?: ReadonlyArray<NativeRenderedItemsResponse>;
+}>;
+
+type NativeRenderedItemsResponse = Readonly<{
+  version: Int32;
+  requestId: Int32;
+  nativeDispatchUptimeMs?: Double;
   jsRenderDurationMs?: Int32;
   jsTotalDurationMs?: Int32;
   items: ReadonlyArray<NativeRenderedChatItem>;

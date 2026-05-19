@@ -6,12 +6,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import {Platform, type StyleProp, type ViewStyle} from 'react-native';
+import {
+  NativeModules,
+  Platform,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import ComposeChatListNativeComponent, {
   ComposeChatListCommands,
   type ComposeChatListDataState,
   type ComposeChatListPlaceholderSpec,
   type ComposeChatListRenderedItems,
+  type ComposeChatListRenderedItemsResponse,
   type ReactToItemEvent,
   type RenderedChatItem,
   type RequestItemsEvent,
@@ -59,6 +65,25 @@ export type VersionedComposeChatListProps = {
   accessibilityLabel?: string;
 };
 
+const EMPTY_RENDERED_ITEMS: RenderedChatItem[] = [];
+const EMPTY_RENDERED_RESPONSES: ComposeChatListRenderedItemsResponse[] = [];
+const MAX_RENDERED_RESPONSE_QUEUE = 128;
+const {BackgroundListBridge} = NativeModules;
+
+type DirectRequestGlobal = typeof globalThis & {
+  __composeChatBackgroundRequestHandler?: (event: DirectItemRequest) => void;
+};
+
+type DirectItemRequest = {
+  listName: string;
+  requestId: number;
+  version: number;
+  nativeDispatchUptimeMs?: number;
+  indices: number[];
+  windowIndices: number[];
+  resetIndices?: number[];
+};
+
 export const VersionedComposeChatList = forwardRef<
   VersionedComposeChatListRef,
   VersionedComposeChatListProps
@@ -84,13 +109,19 @@ export const VersionedComposeChatList = forwardRef<
   const dataRef = useRef(data);
   const appliedFabricSeqRef = useRef(maxDataOpSeq(data.toNativeState(true).ops));
   const [dataState, setDataState] = useState(() => data.toNativeState(true));
-  const [renderedItems, setRenderedItems] =
-    useState<ComposeChatListRenderedItems>(() => ({
-      version: data.version,
-      requestId: 0,
-      items: [],
-    }));
+	  const [renderedItems, setRenderedItems] =
+	    useState<ComposeChatListRenderedItems>(() => ({
+	      version: data.version,
+	      requestId: 0,
+	      items: EMPTY_RENDERED_ITEMS,
+	      responseSeq: 0,
+	      responses: EMPTY_RENDERED_RESPONSES,
+	    }));
   const fabricWindow = useFabricItemWindow();
+  const latestWindowIndicesRef = useRef<number[]>([]);
+  const directRequestHandlerRef = useRef<(event: DirectItemRequest) => void>(
+    () => {},
+  );
 
   useImperativeHandle(
     ref,
@@ -114,11 +145,13 @@ export const VersionedComposeChatList = forwardRef<
       dataRef.current = data;
       appliedFabricSeqRef.current = maxDataOpSeq(data.toNativeState(true).ops);
       setDataState(data.toNativeState(true));
-      setRenderedItems({
-        version: data.version,
-        requestId: 0,
-        items: [],
-      });
+	      setRenderedItems({
+	        version: data.version,
+	        requestId: 0,
+	        items: EMPTY_RENDERED_ITEMS,
+	        responseSeq: 0,
+	        responses: EMPTY_RENDERED_RESPONSES,
+	      });
       fabricWindow.reset();
       return;
     }
@@ -128,7 +161,7 @@ export const VersionedComposeChatList = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, extraData]);
 
-  function publishState(reset: boolean) {
+	  function publishState(reset: boolean) {
     const nextState = data.toNativeState(reset);
     const unappliedOps = nextState.ops.filter(
       op => op.seq > appliedFabricSeqRef.current,
@@ -138,17 +171,65 @@ export const VersionedComposeChatList = forwardRef<
       maxDataOpSeq(nextState.ops),
     );
     setDataState(nextState);
-    if (reset) {
-      fabricWindow.reset();
-    } else {
-      fabricWindow.applyOps(unappliedOps);
+	    if (reset) {
+	      fabricWindow.reset();
+	    } else {
+	      fabricWindow.applyOps(unappliedOps);
     }
   }
 
-  function handleRequestItems(event: RequestItemsEvent) {
-    if (renderMode !== 'main' && Platform.OS !== 'ios') {
+  useEffect(() => {
+    if (
+      renderMode !== 'main' ||
+      Platform.OS !== 'android' ||
+      !BackgroundListBridge?.rendererReady
+    ) {
       return;
     }
+
+    const directListName = mainRuntimeListName(listName);
+    const directGlobal = globalThis as DirectRequestGlobal;
+    const previousHandler = directGlobal.__composeChatBackgroundRequestHandler;
+    const handler = (event: DirectItemRequest) => {
+      if (event.listName === directListName) {
+        directRequestHandlerRef.current(event);
+        return;
+      }
+      previousHandler?.(event);
+    };
+
+    directGlobal.__composeChatBackgroundRequestHandler = handler;
+    BackgroundListBridge.rendererReady(directListName);
+
+    return () => {
+      if (directGlobal.__composeChatBackgroundRequestHandler === handler) {
+        if (previousHandler) {
+          directGlobal.__composeChatBackgroundRequestHandler = previousHandler;
+        } else {
+          delete directGlobal.__composeChatBackgroundRequestHandler;
+        }
+      }
+    };
+  }, [listName, renderMode]);
+
+  directRequestHandlerRef.current = (event: DirectItemRequest) => {
+    renderAndDeliverItems(
+      {
+        indices: event.indices,
+        nativeDispatchUptimeMs: event.nativeDispatchUptimeMs,
+        requestId: event.requestId,
+        resetIndices: event.resetIndices ?? [],
+        version: event.version,
+        windowIndices: event.windowIndices,
+      },
+      Date.now(),
+    );
+  };
+
+  function handleRequestItems(event: RequestItemsEvent) {
+	    if (renderMode !== 'main' && Platform.OS !== 'ios') {
+	      return;
+	    }
 
     const {
       indicesJson,
@@ -160,23 +241,65 @@ export const VersionedComposeChatList = forwardRef<
     const indices = parseIndexList(indicesJson);
     const resetIndices = parseIndexList(resetIndicesJson);
     const windowIndices = parseIndexList(windowIndicesJson);
-    const requestReceivedAt = Date.now();
-    if (version !== data.version) {
+    renderAndDeliverItems(
+      {
+        indices,
+        requestId,
+        resetIndices,
+        version,
+        windowIndices,
+      },
+      Date.now(),
+    );
+  }
+
+  function renderAndDeliverItems(
+    request: {
+      indices: number[];
+      nativeDispatchUptimeMs?: number;
+      requestId: number;
+      resetIndices: number[];
+      version: number;
+      windowIndices: number[];
+    },
+    requestReceivedAt: number,
+  ) {
+    latestWindowIndicesRef.current = request.windowIndices;
+    if (request.version !== data.version) {
       return;
     }
 
     const renderStartedAt = Date.now();
-    data.resetRenderedItems(resetIndices);
-    const items = data.renderItems(indices);
+    data.resetRenderedItems(request.resetIndices);
+    const items = data.renderItems(request.indices);
     const renderFinishedAt = Date.now();
-    setRenderedItems({
-      version,
-      requestId,
-      jsRenderDurationMs: renderFinishedAt - renderStartedAt,
-      jsTotalDurationMs: renderFinishedAt - requestReceivedAt,
-      items,
-    });
-    fabricWindow.mergeItems(items, windowIndices);
+	    const response: ComposeChatListRenderedItemsResponse = {
+      version: request.version,
+      requestId: request.requestId,
+      nativeDispatchUptimeMs: request.nativeDispatchUptimeMs,
+	      jsRenderDurationMs: renderFinishedAt - renderStartedAt,
+	      jsTotalDurationMs: renderFinishedAt - requestReceivedAt,
+	      items,
+	    };
+    if (
+      renderMode === 'main' &&
+      Platform.OS === 'android' &&
+      BackgroundListBridge?.deliverRenderedItems
+    ) {
+      BackgroundListBridge.deliverRenderedItems(listName, response);
+    } else {
+      setRenderedItems(previous => {
+        const responses = [...(previous.responses ?? []), response].slice(
+          -MAX_RENDERED_RESPONSE_QUEUE,
+        );
+        return {
+          ...response,
+          responseSeq: (previous.responseSeq ?? 0) + 1,
+          responses,
+        };
+      });
+    }
+    fabricWindow.mergeItems(items, latestWindowIndicesRef.current);
   }
 
   function handleReactToItem(event: ReactToItemEvent) {
@@ -215,6 +338,10 @@ export const VersionedComposeChatList = forwardRef<
 
 function defaultKeyExtractor(item: RenderedChatItem) {
   return item.id;
+}
+
+function mainRuntimeListName(listName: string) {
+  return `main:${listName}`;
 }
 
 export default VersionedComposeChatList;

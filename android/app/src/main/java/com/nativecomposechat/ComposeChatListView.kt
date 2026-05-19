@@ -371,24 +371,32 @@ private class FabricRowSlot {
 @SuppressLint("ClickableViewAccessibility")
 @Stable
 class ComposeChatListView(context: Context) : FrameLayout(context) {
-  private companion object {
-    const val WINDOW_BEHIND = 4
+	  private companion object {
+	    const val WINDOW_BEHIND = 4
     const val WINDOW_AHEAD = 8
     const val ACTIVE_SCROLL_WINDOW_BEHIND = 4
     const val ACTIVE_SCROLL_WINDOW_AHEAD = 8
-    const val BACKGROUND_REQUEST_DISPATCH_DELAY_MS = 8L
-    const val STALE_REQUEST_MS = 2_000L
-  }
+	    const val MAIN_REQUEST_DISPATCH_DELAY_MS = 4L
+	    const val BACKGROUND_REQUEST_DISPATCH_DELAY_MS = 8L
+	    const val STALE_REQUEST_MS = 500L
+      const val FABRIC_CELL_MOUNT_WAIT_MS = 500L
+      const val MAX_APPLIED_RESPONSE_KEYS = 512
+		  }
 
   private val renderedRows = mutableStateMapOf<Int, RenderedChatItem>()
   private val fabricCells = mutableStateMapOf<Int, ComposeChatListItemView>()
   private val fabricCellHeights = mutableStateMapOf<Int, Int>()
   private val rowSlots = mutableMapOf<Int, FabricRowSlot>()
   private val fabricChildren = mutableListOf<ComposeChatListItemView>()
-  private val dirtyRows = mutableSetOf<Int>()
+	  private val dirtyRows = mutableSetOf<Int>()
   private val pendingRequests = mutableMapOf<String, Long>()
   private val pendingRequestBatches = mutableMapOf<Int, List<Int>>()
   private val pendingLoadTelemetry = mutableMapOf<Int, MessageLoadTelemetry>()
+  private val pendingFabricCellMounts = mutableMapOf<Int, Long>()
+  private val appliedRenderedResponseKeys = mutableListOf<String>()
+  private val appliedRenderedResponseKeySet = mutableSetOf<String>()
+  private var pendingMainRequestDispatch: PendingItemRequestDispatch? = null
+  private var mainRequestDispatchRunnable: Runnable? = null
   private var pendingBackgroundRequestDispatch: PendingItemRequestDispatch? = null
   private var backgroundRequestDispatchRunnable: Runnable? = null
   private var backgroundRequestInFlight = false
@@ -418,9 +426,10 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   private var lastDispatchedWindowKey = ""
   private var staleRequestCheckScheduled = false
 
-  init {
-    val composeView =
-        ComposeView(context).apply {
+	  init {
+    BackgroundListRuntime.registerView(listName, this)
+	    val composeView =
+	        ComposeView(context).apply {
           layoutParams =
               LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
           setOnTouchListener { view, event ->
@@ -531,10 +540,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     rowSlots.values.forEach { it.renderedRow = null }
   }
 
-  private fun setFabricCell(index: Int, cell: ComposeChatListItemView) {
-    fabricCells[index] = cell
-    rowSlot(index).fabricCell = cell
-  }
+	  private fun setFabricCell(index: Int, cell: ComposeChatListItemView) {
+	    fabricCells[index] = cell
+    pendingFabricCellMounts.remove(index)
+	    rowSlot(index).fabricCell = cell
+	  }
 
   private fun removeFabricCellAt(index: Int) {
     fabricCells.remove(index)
@@ -645,10 +655,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   fun setListName(nextListName: String) {
     if (listName == nextListName) return
 
-    BackgroundListRuntime.unregisterView(listName, this)
-    listName = nextListName
-    configureBackgroundRuntime()
-  }
+	    BackgroundListRuntime.unregisterView(listName, this)
+	    listName = nextListName
+    BackgroundListRuntime.registerView(listName, this)
+	    configureBackgroundRuntime()
+	  }
 
   fun setBackgroundAppName(nextBackgroundAppName: String) {
     backgroundAppName = nextBackgroundAppName
@@ -678,11 +689,14 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val shouldReset = ops == null || (dataState.optBoolean("reset", false) && nextVersion != dataVersion)
 
     if (shouldReset) {
-      clearRenderedRows()
-      dirtyRows.clear()
-      pendingRequests.clear()
+	      clearRenderedRows()
+	      dirtyRows.clear()
+	      pendingRequests.clear()
       pendingRequestBatches.clear()
       pendingLoadTelemetry.clear()
+      pendingFabricCellMounts.clear()
+      clearAppliedRenderedResponseKeys()
+      clearPendingMainRequestDispatch()
       clearPendingBackgroundRequestDispatch()
       staleRequestCheckScheduled = false
       lastDispatchedWindowKey = ""
@@ -711,10 +725,26 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
   fun applyRenderedItems(renderedItems: ReadableMap?, nativeReceivedAtMs: Long = -1L) {
     if (renderedItems == null) return
 
+    val responses = renderedItems.optArray("responses")
+    if (responses != null) {
+      for (i in 0 until responses.size()) {
+        responses.getMap(i)?.let { response -> applyRenderedItemsResponse(response, nativeReceivedAtMs) }
+      }
+      return
+    }
+
+    applyRenderedItemsResponse(renderedItems, nativeReceivedAtMs)
+  }
+
+  private fun applyRenderedItemsResponse(renderedItems: ReadableMap, nativeReceivedAtMs: Long) {
     val incomingVersion = renderedItems.optInt("version", dataVersion)
     val incomingRequestId = renderedItems.optInt("requestId", -1)
+    if (!rememberAppliedRenderedResponse(incomingVersion, incomingRequestId)) {
+      return
+    }
     if (incomingVersion != dataVersion) {
       val telemetry = pendingLoadTelemetry.remove(incomingRequestId)
+      pendingRequestBatches.remove(incomingRequestId)
       messageLoadLog(
           "drop reason=versionMismatch requestId=$incomingRequestId incomingVersion=$incomingVersion " +
               "currentVersion=$dataVersion elapsedMs=${telemetry?.let { SystemClock.uptimeMillis() - it.requestedAtMs } ?: -1}",
@@ -726,7 +756,16 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     val responseAtMs = SystemClock.uptimeMillis()
     val telemetry = pendingLoadTelemetry.remove(incomingRequestId)
     val requestedIndices = pendingRequestBatches.remove(incomingRequestId).orEmpty()
-    val items = renderedItems.optArray("items") ?: return
+    val items =
+        renderedItems.optArray("items")
+            ?: run {
+              messageLoadLog(
+                  "drop reason=missingItems requestId=$incomingRequestId version=$incomingVersion " +
+                      "elapsedMs=${telemetry?.let { responseAtMs - it.requestedAtMs } ?: -1}",
+              )
+              finishBackgroundRequestIfNeeded()
+              return
+            }
     val activeIndices = visibleRequestWindow.toSet()
     var appliedCount = 0
     var cachedOffscreenCount = 0
@@ -749,9 +788,12 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
               renderVersion = row.optInt("renderVersion", incomingVersion),
           ),
       )
-      dirtyRows.remove(index)
-      pendingRequests.remove(requestKey(incomingVersion, index))
-      if (index in activeIndices) {
+	      dirtyRows.remove(index)
+	      pendingRequests.remove(requestKey(incomingVersion, index))
+      if (!fabricCells.containsKey(index)) {
+        pendingFabricCellMounts[index] = responseAtMs
+      }
+	      if (index in activeIndices) {
         appliedCount += 1
       } else {
         cachedOffscreenCount += 1
@@ -828,11 +870,13 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         "reset" -> {
           clearRenderedRows()
           dirtyRows.clear()
-          clearFabricCellHeights()
-          pendingRequestBatches.clear()
-          pendingLoadTelemetry.clear()
-          clearPendingBackgroundRequestDispatch()
-        }
+	          clearFabricCellHeights()
+	          pendingRequestBatches.clear()
+	          pendingLoadTelemetry.clear()
+            pendingFabricCellMounts.clear()
+            clearAppliedRenderedResponseKeys()
+	          clearPendingBackgroundRequestDispatch()
+	        }
       }
       lastAppliedSeq = seq
     }
@@ -1477,10 +1521,18 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       }
     }
 
+    val now = SystemClock.uptimeMillis()
     val unresolved =
         activeIndices.filter { index ->
-          index in 0 until itemCount &&
-              (!renderedRows.containsKey(index) || dirtyRows.contains(index))
+          if (index !in 0 until itemCount) {
+            return@filter false
+          }
+
+          val hasRenderedRow = renderedRows.containsKey(index)
+          val hasFabricCell = fabricCells.containsKey(index)
+          val waitingForFabricCell =
+              hasRenderedRow && !hasFabricCell && isWaitingForFabricCell(index, now)
+          !hasRenderedRow || dirtyRows.contains(index) || (!hasFabricCell && !waitingForFabricCell)
         }
     val missing =
         unresolved.filter { index ->
@@ -1518,7 +1570,71 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       scheduleBackgroundItemRequest(missing, activeIndices, resetIndices)
       return
     }
-    dispatchItemRequestNow(missing, activeIndices, resetIndices)
+    scheduleMainItemRequest(missing, activeIndices, resetIndices)
+  }
+
+  private fun scheduleMainItemRequest(
+      missing: List<Int>,
+      activeIndices: List<Int>,
+      resetIndices: Set<Int>,
+  ) {
+    val activeIndexSet = activeIndices.toSet()
+    val previous = pendingMainRequestDispatch
+    pendingMainRequestDispatch =
+        if (previous == null) {
+          PendingItemRequestDispatch(missing, activeIndices, resetIndices)
+        } else {
+          PendingItemRequestDispatch(
+              missing =
+                  (previous.missing + missing)
+                      .filter { index ->
+                        index in activeIndexSet && requestKey(dataVersion, index) in pendingRequests
+                      }
+                      .distinct(),
+              activeIndices = activeIndices,
+              resetIndices =
+                  (previous.resetIndices + resetIndices).filter { it in activeIndexSet }.toSet(),
+          )
+        }
+
+    if (mainRequestDispatchRunnable != null) {
+      return
+    }
+
+    val runnable =
+        Runnable {
+          mainRequestDispatchRunnable = null
+          flushPendingMainRequestDispatch()
+        }
+    mainRequestDispatchRunnable = runnable
+    postDelayed(runnable, MAIN_REQUEST_DISPATCH_DELAY_MS)
+  }
+
+  private fun flushPendingMainRequestDispatch() {
+    mainRequestDispatchRunnable?.let { removeCallbacks(it) }
+    mainRequestDispatchRunnable = null
+
+    val request = pendingMainRequestDispatch
+    pendingMainRequestDispatch = null
+    if (request == null) {
+      return
+    }
+
+    val latestActiveIndices =
+        request.activeIndices.filter { it in 0 until itemCount }.distinct()
+    val latestActiveIndexSet = latestActiveIndices.toSet()
+    val latestMissing =
+        request.missing
+            .filter { index ->
+              index in latestActiveIndexSet && requestKey(dataVersion, index) in pendingRequests
+            }
+            .distinct()
+
+    dispatchItemRequestNow(
+        latestMissing,
+        latestActiveIndices,
+        request.resetIndices.filter { it in latestMissing }.toSet(),
+    )
   }
 
   private fun scheduleBackgroundItemRequest(
@@ -1598,6 +1714,12 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     flushPendingBackgroundRequestDispatch()
   }
 
+  private fun clearPendingMainRequestDispatch() {
+    mainRequestDispatchRunnable?.let { removeCallbacks(it) }
+    mainRequestDispatchRunnable = null
+    pendingMainRequestDispatch = null
+  }
+
   private fun clearPendingBackgroundRequestDispatch() {
     backgroundRequestDispatchRunnable?.let { removeCallbacks(it) }
     backgroundRequestDispatchRunnable = null
@@ -1639,10 +1761,10 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             "missing=[${missing.joinToString(",")}] window=[${activeIndices.joinToString(",")}] " +
             "reset=[${resetIndices.filter { it in missing }.joinToString(",")}]",
     )
-    if (renderMode == "background") {
-      if (missing.isEmpty()) {
-        pendingLoadTelemetry.remove(nextRequestId)
-        return
+	    if (renderMode == "background") {
+	      if (missing.isEmpty()) {
+	        pendingLoadTelemetry.remove(nextRequestId)
+	        return
       }
       backgroundRequestInFlight = true
       configureBackgroundRuntime()
@@ -1654,10 +1776,23 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
           activeIndices,
           resetIndices.filter { it in missing },
       )
+	      return
+	    }
+
+    val directMainListName = mainRuntimeListName()
+    if (BackgroundListRuntime.isRendererReady(directMainListName)) {
+      BackgroundListRuntime.requestItems(
+          directMainListName,
+          nextRequestId,
+          dataVersion,
+          missing,
+          activeIndices,
+          resetIndices.filter { it in missing },
+      )
       return
     }
-
-    val event = Arguments.createMap()
+	
+	    val event = Arguments.createMap()
     event.putInt("requestId", nextRequestId)
     event.putInt("version", dataVersion)
     event.putString("indicesJson", missing.joinToString(","))
@@ -1676,6 +1811,8 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       visibleIndices: List<Int>,
       useActiveScrollWindow: Boolean,
   ): List<Int> {
+    if (visibleIndices.isEmpty() || itemCount <= 0) return emptyList()
+
     val behind = if (useActiveScrollWindow) ACTIVE_SCROLL_WINDOW_BEHIND else WINDOW_BEHIND
     val ahead = if (useActiveScrollWindow) ACTIVE_SCROLL_WINDOW_AHEAD else WINDOW_AHEAD
     return visibleIndices
@@ -1698,12 +1835,17 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
         removeFabricCellAt(index)
       }
     }
-    fabricCellHeights.keys.toList().forEach { index ->
+	    fabricCellHeights.keys.toList().forEach { index ->
+	      if (index !in activeIndices) {
+	        removeFabricCellHeight(index)
+	      }
+	    }
+    pendingFabricCellMounts.keys.toList().forEach { index ->
       if (index !in activeIndices) {
-        removeFabricCellHeight(index)
+        pendingFabricCellMounts.remove(index)
       }
     }
-    pendingRequests.keys.toList().forEach { key ->
+	    pendingRequests.keys.toList().forEach { key ->
       val version = key.substringBefore(':', "").toIntOrNull()
       val index = key.substringAfter(':', "").toIntOrNull()
       if (version == null || version != dataVersion || index == null || index !in activeIndices) {
@@ -1711,11 +1853,19 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
       }
     }
     pendingRequestBatches.keys.toList().forEach { requestId ->
-      val remaining = pendingRequestBatches[requestId]
-          ?.filter { index -> index in activeIndices && requestKey(dataVersion, index) in pendingRequests }
-          .orEmpty()
-      if (remaining.isEmpty()) {
-        pendingRequestBatches.remove(requestId)
+      val original = pendingRequestBatches[requestId].orEmpty()
+      val remaining =
+          original.filter { index ->
+            index in activeIndices && requestKey(dataVersion, index) in pendingRequests
+          }
+      val remainingSet = remaining.toSet()
+      original.forEach { index ->
+        if (index !in remainingSet) {
+          pendingRequests.remove(requestKey(dataVersion, index))
+        }
+      }
+	      if (remaining.isEmpty()) {
+	        pendingRequestBatches.remove(requestId)
         pendingLoadTelemetry.remove(requestId)?.let { telemetry ->
           messageLoadLog(
               "drop reason=windowChanged requestId=$requestId version=${telemetry.version} " +
@@ -1824,6 +1974,38 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
 
   private fun requestKey(version: Int, index: Int): String = "$version:$index"
 
+  private fun mainRuntimeListName(): String = "main:$listName"
+
+  private fun isWaitingForFabricCell(index: Int, now: Long): Boolean {
+    val requestedAt = pendingFabricCellMounts[index] ?: return false
+    if (now - requestedAt <= FABRIC_CELL_MOUNT_WAIT_MS) {
+      return true
+    }
+    pendingFabricCellMounts.remove(index)
+    return false
+  }
+
+  private fun rememberAppliedRenderedResponse(version: Int, requestId: Int): Boolean {
+    if (requestId < 0) return true
+
+    val key = "$version:$requestId"
+    if (!appliedRenderedResponseKeySet.add(key)) {
+      return false
+    }
+
+    appliedRenderedResponseKeys.add(key)
+    while (appliedRenderedResponseKeys.size > MAX_APPLIED_RESPONSE_KEYS) {
+      val removedKey = appliedRenderedResponseKeys.removeAt(0)
+      appliedRenderedResponseKeySet.remove(removedKey)
+    }
+    return true
+  }
+
+  private fun clearAppliedRenderedResponseKeys() {
+    appliedRenderedResponseKeys.clear()
+    appliedRenderedResponseKeySet.clear()
+  }
+
   private fun scheduleInitialScrollIfNeeded() {
     if (initialScrollApplied || itemCount <= 0) return
 
@@ -1886,12 +2068,11 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
     )
   }
 
-  private fun configureBackgroundRuntime() {
-    if (renderMode != "background") return
-    val themedContext = context as? ThemedReactContext ?: return
-
-    BackgroundListRuntime.registerView(listName, this)
-    if (backgroundRootView == null) {
+	  private fun configureBackgroundRuntime() {
+	    if (renderMode != "background") return
+	    val themedContext = context as? ThemedReactContext ?: return
+	
+	    if (backgroundRootView == null) {
       backgroundRootView =
           BackgroundListRuntime.createHiddenRoot(themedContext, backgroundAppName, listName).also {
             it.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS

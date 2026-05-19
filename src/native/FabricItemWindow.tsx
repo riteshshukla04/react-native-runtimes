@@ -23,23 +23,84 @@ export type FabricItemWindowRenderer = (
 ) => ReactElement | null;
 
 const MAX_FABRIC_ITEMS = 48;
+const FABRIC_MERGE_ITEMS_PER_FRAME = 4;
 const MIN_RECYCLE_SLOTS_PER_TYPE = 0;
 
 export function useFabricItemWindow() {
   const [items, setItems] = useState<RenderedChatItem[]>([]);
+  const pendingTargetItemsRef = useRef<RenderedChatItem[] | null>(null);
+  const mergeFrameRef = useRef<number | null>(null);
+
+  const cancelPendingMerge = useCallback(() => {
+    pendingTargetItemsRef.current = null;
+    if (mergeFrameRef.current != null) {
+      cancelAnimationFrame(mergeFrameRef.current);
+      mergeFrameRef.current = null;
+    }
+  }, []);
+
+  const schedulePendingMerge = useCallback(() => {
+    if (mergeFrameRef.current != null) {
+      return;
+    }
+
+    mergeFrameRef.current = requestAnimationFrame(() => {
+      mergeFrameRef.current = null;
+      setItems(previousItems => {
+        const targetItems = pendingTargetItemsRef.current;
+        if (targetItems == null) {
+          return previousItems;
+        }
+
+        const nextItems = nextFabricMergeFrame(previousItems, targetItems);
+        if (sameFabricItemList(nextItems, targetItems)) {
+          pendingTargetItemsRef.current = null;
+        } else {
+          schedulePendingMerge();
+        }
+        return sameFabricItemList(previousItems, nextItems)
+          ? previousItems
+          : nextItems;
+      });
+    });
+  }, []);
+
+  useEffect(() => cancelPendingMerge, [cancelPendingMerge]);
+
   const reset = useCallback(() => {
+    cancelPendingMerge();
     setItems([]);
-  }, []);
+  }, [cancelPendingMerge]);
   const applyOps = useCallback((ops: ComposeChatListDataOp[]) => {
+    cancelPendingMerge();
     setItems(previousItems => applyFabricDataOps(previousItems, ops));
-  }, []);
+  }, [cancelPendingMerge]);
   const mergeItems = useCallback(
     (nextItems: RenderedChatItem[], windowIndices?: number[]) => {
-      setItems(previousItems =>
-        mergeFabricItems(previousItems, nextItems, windowIndices),
-      );
+      setItems(previousItems => {
+        const targetItems = mergeFabricItems(
+          previousItems,
+          nextItems,
+          windowIndices,
+        );
+        const priorityIndices = new Set(nextItems.map(item => item.index));
+        const framedItems = nextFabricMergeFrame(
+          previousItems,
+          targetItems,
+          priorityIndices,
+        );
+        if (sameFabricItemList(framedItems, targetItems)) {
+          pendingTargetItemsRef.current = null;
+        } else {
+          pendingTargetItemsRef.current = targetItems;
+          schedulePendingMerge();
+        }
+        return sameFabricItemList(previousItems, framedItems)
+          ? previousItems
+          : framedItems;
+      });
     },
-    [],
+    [schedulePendingMerge],
   );
 
   return {
@@ -222,6 +283,66 @@ function mergeFabricItems(
     .filter(item => allowedIndices == null || allowedIndices.has(item.index))
     .sort((left, right) => left.index - right.index)
     .slice(0, MAX_FABRIC_ITEMS);
+}
+
+function nextFabricMergeFrame(
+  currentItems: RenderedChatItem[],
+  targetItems: RenderedChatItem[],
+  priorityIndices?: Set<number>,
+) {
+  if (targetItems.length === 0) {
+    return targetItems;
+  }
+
+  const currentItemsByIndex = new Map(
+    currentItems.map(item => [item.index, item]),
+  );
+  let remainingNewItems = FABRIC_MERGE_ITEMS_PER_FRAME;
+  const framedItemsByIndex = new Set<number>();
+  const orderedTargetItems =
+    priorityIndices == null || priorityIndices.size === 0
+      ? targetItems
+      : [
+          ...targetItems.filter(item => priorityIndices.has(item.index)),
+          ...targetItems.filter(item => !priorityIndices.has(item.index)),
+        ];
+
+  for (const targetItem of orderedTargetItems) {
+    const currentItem = currentItemsByIndex.get(targetItem.index);
+    if (currentItem != null && sameFabricItem(currentItem, targetItem)) {
+      framedItemsByIndex.add(targetItem.index);
+      continue;
+    }
+
+    if (remainingNewItems > 0) {
+      framedItemsByIndex.add(targetItem.index);
+      remainingNewItems -= 1;
+    }
+  }
+
+  return targetItems.filter(item => framedItemsByIndex.has(item.index));
+}
+
+function sameFabricItemList(
+  leftItems: RenderedChatItem[],
+  rightItems: RenderedChatItem[],
+) {
+  if (leftItems.length !== rightItems.length) {
+    return false;
+  }
+
+  return leftItems.every((leftItem, index) =>
+    sameFabricItem(leftItem, rightItems[index]),
+  );
+}
+
+function sameFabricItem(leftItem: RenderedChatItem, rightItem: RenderedChatItem) {
+  return (
+    leftItem.index === rightItem.index &&
+    leftItem.id === rightItem.id &&
+    leftItem.type === rightItem.type &&
+    leftItem.renderVersion === rightItem.renderVersion
+  );
 }
 
 function groupItemsByType(items: RenderedChatItem[]) {
