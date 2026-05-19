@@ -1,8 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <optional>
-#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -28,6 +28,10 @@ class SharedZustandStore {
       const std::string& storeName,
       const std::string& subtreeKey,
       std::string stateJson);
+  Snapshot getOrInitState(
+      const std::string& storeName,
+      const std::string& subtreeKey,
+      std::string initialJson);
   std::optional<Snapshot> getState(
       const std::string& storeName,
       const std::string& subtreeKey);

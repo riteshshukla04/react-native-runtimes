@@ -7,7 +7,7 @@ namespace facebook::react {
 class SharedZustandStoreJni : public jni::JavaClass<SharedZustandStoreJni> {
  public:
   static constexpr const char* kJavaDescriptor =
-      "Lcom/nativecomposechat/SharedZustandStoreModule;";
+      "Lcom/nativecompose/threadedzustand/SharedZustandStoreModule;";
 
   static void registerNatives();
 
@@ -16,6 +16,12 @@ class SharedZustandStoreJni : public jni::JavaClass<SharedZustandStoreJni> {
       jni::alias_ref<SharedZustandStoreJni> jobj,
       jni::alias_ref<jstring> storeName,
       jni::alias_ref<jstring> subtreeKey);
+
+  static jni::local_ref<jstring> nativeGetOrInitState(
+      jni::alias_ref<SharedZustandStoreJni> jobj,
+      jni::alias_ref<jstring> storeName,
+      jni::alias_ref<jstring> subtreeKey,
+      jni::alias_ref<jstring> initialJson);
 
   static jint nativeSetState(
       jni::alias_ref<SharedZustandStoreJni> jobj,

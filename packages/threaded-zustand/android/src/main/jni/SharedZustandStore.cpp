@@ -50,6 +50,20 @@ SharedZustandStore::Snapshot SharedZustandStore::setState(
   return Snapshot{entry->stateJson, entry->revision};
 }
 
+SharedZustandStore::Snapshot SharedZustandStore::getOrInitState(
+    const std::string& storeName,
+    const std::string& subtreeKey,
+    std::string initialJson) {
+  auto entry = getOrCreateEntry(storeName, subtreeKey);
+  std::lock_guard<std::mutex> lock(entry->mutex);
+  if (!entry->hasState) {
+    entry->stateJson = std::move(initialJson);
+    entry->revision += 1;
+    entry->hasState = true;
+  }
+  return Snapshot{entry->stateJson, entry->revision};
+}
+
 std::optional<SharedZustandStore::Snapshot> SharedZustandStore::getState(
     const std::string& storeName,
     const std::string& subtreeKey) {

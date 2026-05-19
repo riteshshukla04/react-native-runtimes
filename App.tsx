@@ -47,6 +47,7 @@ import VersionedComposeChatList, {
 import {
   threadedComponent,
   Threaded,
+  ThreadedRuntime,
   ThreadedScreen,
 } from '@native-compose/threaded-runtime';
 
@@ -57,6 +58,7 @@ type RnBenchmarkMode =
   | 'legendlist-main'
   | SecondRuntimeRnBenchmarkMode;
 type SharedRuntimeMode =
+  | 'home'
   | 'shared-tree'
   | 'poke-shared'
   | 'threaded-chat-screen'
@@ -99,8 +101,16 @@ type PokemonSharedState = {
   catalog: PokemonCatalogState;
   pokemonItems: PokemonEntry[];
 };
+type HomePersistenceState = {
+  counter: {
+    count: number;
+    updatedAt: string | null;
+    updatedBy: string;
+  };
+};
 
 const POKEMON_PAGE_SIZE = 24;
+const HOME_RUNTIME_NAME = 'home-persistence-runtime';
 const CHAT_THREADS: ChatThreadSummary[] = [
   {
     id: 'release-room',
@@ -191,6 +201,25 @@ const pokemonStore = createSharedStore<PokemonSharedState>({
   subtrees: ['catalog', 'pokemonItems'],
 });
 
+const initialHomePersistenceState: HomePersistenceState = {
+  counter: {
+    count: 0,
+    updatedAt: null,
+    updatedBy: 'initial',
+  },
+};
+
+const homePersistenceStore = createSharedStore<HomePersistenceState>({
+  name: 'threaded-home-persistence-demo',
+  initialState: initialHomePersistenceState,
+  persist: {
+    key: 'threaded-home-persistence-demo',
+    subtrees: ['counter'],
+    version: 1,
+  },
+  subtrees: ['counter'],
+});
+
 function pokemonIdFromUrl(url: string): number {
   const match = url.match(/\/pokemon\/(\d+)\/?$/);
   return match ? Number(match[1]) : 0;
@@ -208,6 +237,30 @@ function formatFetchTime(value: string | null): string {
     return 'never';
   }
   return new Date(value).toLocaleTimeString();
+}
+
+function formatHomeUpdate(value: string | null): string {
+  if (!value) {
+    return 'not persisted yet';
+  }
+  return new Date(value).toLocaleTimeString();
+}
+
+async function incrementHomeCounter(runtimeLabel: string) {
+  const current = homePersistenceStore.getSubtreeState('counter');
+  await homePersistenceStore.setSubtreeState(
+    'counter',
+    {
+      count: current.count + 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: runtimeLabel,
+    },
+    true,
+  );
+}
+
+async function resetHomeCounter() {
+  await homePersistenceStore.clear('counter');
 }
 
 async function requestPokemonPage(sourceRuntime: string) {
@@ -244,7 +297,7 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
-  const [mode, setMode] = useState<BenchmarkMode>('main');
+  const [mode, setMode] = useState<BenchmarkMode>('home');
   const [blockStatus, setBlockStatus] = useState('idle');
   const [blockJsEnabled, setBlockJsEnabled] = useState(false);
   const blockJsEnabledRef = useRef(false);
@@ -292,6 +345,12 @@ function AppContent() {
   return (
     <View style={[styles.container, {paddingTop: safeAreaInsets.top}]}>
       <View style={styles.tabs}>
+        <TabButton
+          active={mode === 'home'}
+          id="tab-home"
+          label="Home"
+          onPress={() => setMode('home')}
+        />
         <TabButton
           active={mode === 'main'}
           id="tab-main-rn"
@@ -368,7 +427,9 @@ function AppContent() {
           />
         </View>
       </View>
-      {mode === 'shared-tree' ? (
+      {mode === 'home' ? (
+        <HomeRuntimeScreen />
+      ) : mode === 'shared-tree' ? (
         <SharedTreeRuntimeScreen />
       ) : mode === 'poke-shared' ? (
         <PokemonRuntimeScreen />
@@ -399,6 +460,169 @@ function AppContent() {
     </View>
   );
 }
+
+function HomeRuntimeScreen() {
+  const [prewarmStatus, setPrewarmStatus] = useState('pending');
+  const [runtimeNames, setRuntimeNames] = useState<string[]>([]);
+
+  const refreshRuntimeNames = useCallback(() => {
+    ThreadedRuntime.getRuntimeNames()
+      .then(setRuntimeNames)
+      .catch(error => {
+        console.warn('[home] failed to read threaded runtime names', error);
+      });
+  }, []);
+
+  const prewarmHomeRuntime = useCallback(() => {
+    const startedAt = Date.now();
+    setPrewarmStatus('prewarming');
+    ThreadedRuntime.prewarm(HOME_RUNTIME_NAME)
+      .then(() => {
+        setPrewarmStatus(`ready in ${Date.now() - startedAt}ms`);
+        refreshRuntimeNames();
+      })
+      .catch(error => {
+        setPrewarmStatus('failed');
+        console.warn('[home] failed to prewarm runtime', error);
+      });
+  }, [refreshRuntimeNames]);
+
+  useEffect(() => {
+    void homePersistenceStore.hydrate();
+    prewarmHomeRuntime();
+  }, [prewarmHomeRuntime]);
+
+  return (
+    <View
+      accessibilityLabel="home-runtime-screen"
+      style={styles.homeScreen}
+      testID="home-runtime-screen">
+      <View style={styles.header}>
+        <Text style={styles.title}>Runtime lab</Text>
+        <Text style={styles.subtitle}>
+          Prewarm status {prewarmStatus} / active{' '}
+          {runtimeNames.length ? runtimeNames.join(', ') : 'none reported'}
+        </Text>
+      </View>
+      <View style={styles.homePanels}>
+        <View
+          accessibilityLabel="home-main-persistence-panel"
+          style={styles.homePanel}
+          testID="home-main-persistence-panel">
+          <HomeCounterPanel runtimeLabel="main RN" />
+        </View>
+        <View style={styles.sharedTreeDivider} />
+        <Threaded
+          accessibilityLabel="home-threaded-persistence-panel"
+          component={HomeThreadedPersistenceApp}
+          props={{runtimeLabel: 'threaded RN'}}
+          runtimeName={HOME_RUNTIME_NAME}
+          style={styles.homeThreadedSurface}
+          surfaceKey="home-threaded-persistence-panel"
+          testID="home-threaded-persistence-panel"
+        />
+      </View>
+      <View style={styles.homeFooter}>
+        <ActionButton
+          id="home-prewarm-runtime"
+          label="Prewarm"
+          onPress={prewarmHomeRuntime}
+        />
+      </View>
+    </View>
+  );
+}
+
+function HomeCounterPanel({runtimeLabel}: {runtimeLabel: string}) {
+  const counter = homePersistenceStore.useStore(
+    state => state.counter,
+    ['counter'],
+  );
+  const [hydrationStatus, setHydrationStatus] = useState('hydrated');
+  const panelId = useMemo(
+    () => runtimeLabel.replace(/[^a-z0-9]+/gi, '-').toLowerCase(),
+    [runtimeLabel],
+  );
+
+  const increment = useCallback(() => {
+    void incrementHomeCounter(runtimeLabel);
+  }, [runtimeLabel]);
+
+  const reset = useCallback(() => {
+    void resetHomeCounter();
+  }, []);
+
+  const hydrate = useCallback(() => {
+    setHydrationStatus('hydrating');
+    homePersistenceStore
+      .hydrate()
+      .then(() => setHydrationStatus('hydrated'))
+      .catch(error => {
+        setHydrationStatus('failed');
+        console.warn('[home] failed to hydrate persisted store', error);
+      });
+  }, []);
+
+  return (
+    <View style={styles.homePanelContent}>
+      <View style={styles.homePanelHeader}>
+        <Text style={styles.sharedTreeRuntime}>{runtimeLabel}</Text>
+        <Text style={styles.sharedTreeMeta}>
+          rev {homePersistenceStore.getRevision('counter')} /{' '}
+          {hydrationStatus}
+        </Text>
+      </View>
+      <View style={styles.homeCounterBlock}>
+        <Text
+          accessibilityLabel={`home-counter-${runtimeLabel}`}
+          style={styles.homeCounter}
+          testID={`home-counter-${panelId}`}>
+          {counter.count}
+        </Text>
+        <Text style={styles.homeCounterMeta}>
+          last {counter.updatedBy} / {formatHomeUpdate(counter.updatedAt)}
+        </Text>
+      </View>
+      <View style={styles.actions}>
+        <ActionButton
+          id={`home-counter-increment-${panelId}`}
+          label="+1"
+          onPress={increment}
+        />
+        <ActionButton
+          id={`home-counter-reset-${panelId}`}
+          label="Reset"
+          onPress={reset}
+        />
+        <ActionButton
+          id={`home-counter-hydrate-${panelId}`}
+          label="Hydrate"
+          onPress={hydrate}
+        />
+      </View>
+    </View>
+  );
+}
+
+type HomeThreadedPersistenceAppProps = {
+  runtimeLabel?: string;
+  runtimeName?: string;
+};
+
+export const HomeThreadedPersistenceApp =
+  threadedComponent<HomeThreadedPersistenceAppProps>(
+    'HomeThreadedPersistence',
+    function HomeThreadedPersistenceApp({
+      runtimeLabel = 'threaded RN',
+      runtimeName,
+    }: HomeThreadedPersistenceAppProps) {
+      return (
+        <HomeCounterPanel
+          runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
+        />
+      );
+    },
+  );
 
 function ThreadedChatScreenSurface({blockStatus}: {blockStatus: string}) {
   return (
@@ -1934,6 +2158,55 @@ const styles = StyleSheet.create({
   },
   secondRuntimeSurface: {
     flex: 1,
+  },
+  homeScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  homePanels: {
+    backgroundColor: '#D1D5DB',
+    flex: 1,
+  },
+  homePanel: {
+    backgroundColor: '#F8FAFC',
+    flex: 1,
+  },
+  homeThreadedSurface: {
+    backgroundColor: '#F8FAFC',
+    flex: 1,
+  },
+  homePanelContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    rowGap: 14,
+  },
+  homePanelHeader: {
+    gap: 2,
+  },
+  homeCounterBlock: {
+    alignItems: 'flex-start',
+    gap: 2,
+  },
+  homeCounter: {
+    color: '#111827',
+    fontSize: 48,
+    fontWeight: '800',
+  },
+  homeCounterMeta: {
+    color: '#4B5563',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  homeFooter: {
+    backgroundColor: '#FFFFFF',
+    borderTopColor: '#E5E7EB',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   threadedScreenSurface: {
     flex: 1,

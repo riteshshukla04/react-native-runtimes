@@ -7,6 +7,9 @@ namespace facebook::react {
 void SharedZustandStoreJni::registerNatives() {
   javaClassLocal()->registerNatives({
       makeNativeMethod("nativeGetState", SharedZustandStoreJni::nativeGetState),
+      makeNativeMethod(
+          "nativeGetOrInitState",
+          SharedZustandStoreJni::nativeGetOrInitState),
       makeNativeMethod("nativeSetState", SharedZustandStoreJni::nativeSetState),
       makeNativeMethod(
           "nativeGetRevision", SharedZustandStoreJni::nativeGetRevision),
@@ -26,13 +29,27 @@ jni::local_ref<jstring> SharedZustandStoreJni::nativeGetState(
   return jni::make_jstring(entry->stateJson);
 }
 
+jni::local_ref<jstring> SharedZustandStoreJni::nativeGetOrInitState(
+    jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
+    jni::alias_ref<jstring> storeName,
+    jni::alias_ref<jstring> subtreeKey,
+    jni::alias_ref<jstring> initialJson) {
+  const auto entry = SharedZustandStore::instance().getOrInitState(
+      storeName->toStdString(),
+      subtreeKey->toStdString(),
+      initialJson->toStdString());
+  return jni::make_jstring(entry.stateJson);
+}
+
 jint SharedZustandStoreJni::nativeSetState(
     jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
     jni::alias_ref<jstring> storeName,
     jni::alias_ref<jstring> subtreeKey,
     jni::alias_ref<jstring> stateJson) {
   const auto entry = SharedZustandStore::instance().setState(
-      storeName->toStdString(), subtreeKey->toStdString(), stateJson->toStdString());
+      storeName->toStdString(),
+      subtreeKey->toStdString(),
+      stateJson->toStdString());
   return entry.revision;
 }
 

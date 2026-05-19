@@ -1,5 +1,6 @@
-package com.nativecomposechat
+package com.nativecompose.threadedzustand
 
+import android.content.Context
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -14,6 +15,10 @@ import java.util.concurrent.CopyOnWriteArraySet
 @ReactModule(name = SharedZustandStoreModule.NAME)
 class SharedZustandStoreModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
+  private val persistedState by lazy {
+    reactContext.getSharedPreferences(PERSISTENCE_PREFS, Context.MODE_PRIVATE)
+  }
+
   override fun getName(): String = NAME
 
   override fun initialize() {
@@ -37,6 +42,48 @@ class SharedZustandStoreModule(private val reactContext: ReactApplicationContext
       promise.resolve(nativeGetState(storeName, subtreeKey))
     } catch (exception: Exception) {
       promise.reject("E_SHARED_ZUSTAND_GET_STATE", exception)
+    }
+  }
+
+  @ReactMethod
+  fun getOrInitState(
+      storeName: String,
+      initialJson: String,
+      persistKey: String?,
+      promise: Promise,
+  ) {
+    getOrInitSubtreeState(storeName, ROOT_SUBTREE_KEY, initialJson, persistKey, promise)
+  }
+
+  @ReactMethod
+  fun getOrInitSubtreeState(
+      storeName: String,
+      subtreeKey: String,
+      initialJson: String,
+      persistKey: String?,
+      promise: Promise,
+  ) {
+    try {
+      val currentJson = nativeGetState(storeName, subtreeKey)
+      val persistedJson = persistKey?.let { persistedState.getString(it, null) }
+      val stateJson = currentJson ?: persistedJson ?: initialJson
+      val resolvedJson =
+          if (currentJson == null) nativeGetOrInitState(storeName, subtreeKey, stateJson)
+          else currentJson
+      val revision = nativeGetRevision(storeName, subtreeKey)
+      val restoredFromPersistence = currentJson == null && persistedJson != null
+
+      if (persistKey != null && restoredFromPersistence.not()) {
+        persistedState.edit().putString(persistKey, resolvedJson).apply()
+      }
+
+      val payload = Arguments.createMap()
+      payload.putString("stateJson", resolvedJson)
+      payload.putInt("revision", revision)
+      payload.putBoolean("restoredFromPersistence", restoredFromPersistence)
+      promise.resolve(payload)
+    } catch (exception: Exception) {
+      promise.reject("E_SHARED_ZUSTAND_GET_OR_INIT", exception)
     }
   }
 
@@ -93,6 +140,26 @@ class SharedZustandStoreModule(private val reactContext: ReactApplicationContext
   }
 
   @ReactMethod
+  fun setPersistedState(persistKey: String, stateJson: String, promise: Promise) {
+    try {
+      persistedState.edit().putString(persistKey, stateJson).apply()
+      promise.resolve(null)
+    } catch (exception: Exception) {
+      promise.reject("E_SHARED_ZUSTAND_SET_PERSISTED_STATE", exception)
+    }
+  }
+
+  @ReactMethod
+  fun clearPersistedState(persistKey: String, promise: Promise) {
+    try {
+      persistedState.edit().remove(persistKey).apply()
+      promise.resolve(null)
+    } catch (exception: Exception) {
+      promise.reject("E_SHARED_ZUSTAND_CLEAR_PERSISTED_STATE", exception)
+    }
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) = Unit
 
   @ReactMethod
@@ -128,6 +195,13 @@ class SharedZustandStoreModule(private val reactContext: ReactApplicationContext
   @DoNotStrip private external fun nativeGetState(storeName: String, subtreeKey: String): String?
 
   @DoNotStrip
+  private external fun nativeGetOrInitState(
+      storeName: String,
+      subtreeKey: String,
+      initialJson: String,
+  ): String
+
+  @DoNotStrip
   private external fun nativeSetState(storeName: String, subtreeKey: String, stateJson: String): Int
 
   @DoNotStrip private external fun nativeGetRevision(storeName: String, subtreeKey: String): Int
@@ -137,9 +211,14 @@ class SharedZustandStoreModule(private val reactContext: ReactApplicationContext
   companion object {
     const val NAME = "SharedZustandStore"
     const val CHANGED_EVENT = "SharedZustandStoreChanged"
+    const val PERSISTENCE_PREFS = "native_compose_threaded_zustand"
     const val ROOT_SUBTREE_KEY = "__root__"
 
     private val modules = CopyOnWriteArraySet<SharedZustandStoreModule>()
+
+    init {
+      System.loadLibrary("native-compose-threaded-zustand")
+    }
 
     private fun notifyChanged(
         storeName: String,

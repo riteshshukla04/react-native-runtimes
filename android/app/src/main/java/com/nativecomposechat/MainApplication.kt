@@ -9,6 +9,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.ease.EaseViewPackage
 import com.nativecompose.threadedruntime.ThreadedRuntime
 import com.nativecompose.threadedruntime.ThreadedRuntimePackage
+import com.nativecompose.threadedzustand.ThreadedZustandPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -20,6 +21,7 @@ class MainApplication : Application(), ReactApplication {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(ComposeChatListPackage())
           add(ThreadedRuntimePackage())
+          add(ThreadedZustandPackage())
         },
     )
   }
@@ -27,7 +29,7 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     ThreadedRuntime.setExtraReactPackagesProvider {
-      listOf(BackgroundListRendererPackage(), EaseViewPackage())
+      listOf(BackgroundListRendererPackage(), ThreadedZustandPackage(), EaseViewPackage())
     }
     loadReactNative(this)
     ThreadedRuntime.prewarmRuntime(

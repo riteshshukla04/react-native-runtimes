@@ -120,6 +120,7 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation(project(":native-compose-threaded-runtime"))
+    implementation(project(":native-compose-threaded-zustand"))
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.runtime:runtime")

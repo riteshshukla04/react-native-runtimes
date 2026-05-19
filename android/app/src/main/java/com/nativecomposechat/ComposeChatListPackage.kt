@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class ComposeChatListPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-      listOf(BackgroundListBridgeModule(reactContext), SharedZustandStoreModule(reactContext))
+      listOf(BackgroundListBridgeModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext

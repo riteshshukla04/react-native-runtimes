@@ -3,8 +3,19 @@ import {NativeEventEmitter, NativeModules} from 'react-native';
 
 const ROOT_SUBTREE_KEY = '__root__';
 
+type NativeHydrationResult = {
+  stateJson: string;
+  revision: number;
+  restoredFromPersistence?: boolean;
+};
+
 type NativeSharedZustandStore = {
   getState(storeName: string): Promise<string | null>;
+  getOrInitState?: (
+    storeName: string,
+    initialJson: string,
+    persistKey: string | null,
+  ) => Promise<NativeHydrationResult>;
   setState(
     storeName: string,
     stateJson: string,
@@ -13,6 +24,12 @@ type NativeSharedZustandStore = {
   getRevision(storeName: string): Promise<number>;
   clear(storeName: string, source: string | null): Promise<number>;
   getSubtreeState(storeName: string, subtreeKey: string): Promise<string | null>;
+  getOrInitSubtreeState?: (
+    storeName: string,
+    subtreeKey: string,
+    initialJson: string,
+    persistKey: string | null,
+  ) => Promise<NativeHydrationResult>;
   setSubtreeState(
     storeName: string,
     subtreeKey: string,
@@ -25,6 +42,8 @@ type NativeSharedZustandStore = {
     subtreeKey: string,
     source: string | null,
   ): Promise<number>;
+  setPersistedState?: (persistKey: string, stateJson: string) => Promise<void>;
+  clearPersistedState?: (persistKey: string) => Promise<void>;
 };
 
 type NativeChangeEvent = {
@@ -52,12 +71,21 @@ export type SharedStoreSliceReducers<TState, TAction> = Partial<{
   [K in SharedStoreSubtreeKey<TState>]: SharedStoreReducer<TState[K], TAction>;
 }>;
 
+export type SharedStorePersistOptions<TState> =
+  | boolean
+  | {
+      key?: string;
+      version?: number;
+      subtrees?: readonly SharedStoreSubtreeKey<TState>[];
+    };
+
 export type SharedStoreOptions<TState, TAction> = {
   name: string;
   initialState: TState;
   reducer?: SharedStoreReducer<TState, TAction>;
   slices?: SharedStoreSliceReducers<TState, TAction>;
   subtrees?: readonly SharedStoreSubtreeKey<TState>[];
+  persist?: SharedStorePersistOptions<TState>;
   sourceId?: string;
 };
 
@@ -173,17 +201,50 @@ function uniqueSubtrees<TState, TAction>(
   return Array.from(new Set(keys));
 }
 
+function resolvePersistedSubtrees<TState>(
+  persist: SharedStorePersistOptions<TState> | undefined,
+  name: string,
+  nativeSubtreeKeys: readonly string[],
+): Map<string, string> {
+  if (!persist) {
+    return new Map();
+  }
+
+  const version = typeof persist === 'object' ? persist.version ?? 1 : 1;
+  const baseKey =
+    typeof persist === 'object' && persist.key ? persist.key : name;
+  const selectedSubtrees =
+    typeof persist === 'object' && persist.subtrees?.length
+      ? new Set<string>(persist.subtrees)
+      : new Set<string>(nativeSubtreeKeys);
+
+  return new Map(
+    nativeSubtreeKeys
+      .filter(subtreeKey => selectedSubtrees.has(subtreeKey))
+      .map(subtreeKey => [
+        subtreeKey,
+        `${baseKey}:${subtreeKey}:v${version}`,
+      ]),
+  );
+}
+
 export function createSharedStore<TState, TAction = unknown>({
   name,
   initialState,
   reducer,
   slices,
   subtrees,
+  persist,
   sourceId = runtimeSourceId,
 }: SharedStoreOptions<TState, TAction>): SharedStoreApi<TState, TAction> {
   const sliceKeys = uniqueSubtrees(initialState, slices, subtrees);
   const usesSubtrees = sliceKeys.length > 0 && !reducer;
   const nativeSubtreeKeys = usesSubtrees ? sliceKeys : [ROOT_SUBTREE_KEY];
+  const persistedSubtrees = resolvePersistedSubtrees(
+    persist,
+    name,
+    nativeSubtreeKeys,
+  );
   const listeners = new Set<ListenerEntry<TState>>();
   const subtreeRevisions = new Map<string, number>();
   let currentState = initialState;
@@ -213,6 +274,50 @@ export function createSharedStore<TState, TAction = unknown>({
     return (initialState as Record<string, unknown>)[subtreeKey] as TState[K];
   }
 
+  function initialJsonForSubtree(subtreeKey: string): string {
+    return subtreeKey === ROOT_SUBTREE_KEY
+      ? stringifyState(initialState)
+      : stringifyState(
+          initialSubtree(subtreeKey as SharedStoreSubtreeKey<TState>),
+        );
+  }
+
+  function publishJsonState(
+    subtreeKey: string,
+    stateJson: string | null,
+    revision: number,
+  ) {
+    if (!usesSubtrees || subtreeKey === ROOT_SUBTREE_KEY) {
+      const nextState =
+        stateJson == null ? initialState : parseState<TState>(stateJson);
+      publish(nextState, subtreeKey, revision);
+      return;
+    }
+
+    const typedSubtreeKey = subtreeKey as SharedStoreSubtreeKey<TState>;
+    const nextSubtreeState =
+      stateJson == null
+        ? initialSubtree(typedSubtreeKey)
+        : parseState<TState[typeof typedSubtreeKey]>(stateJson);
+    publish(patchSubtree(typedSubtreeKey, nextSubtreeState), subtreeKey, revision);
+  }
+
+  async function persistSubtreeState(subtreeKey: string, stateJson: string) {
+    const persistKey = persistedSubtrees.get(subtreeKey);
+    if (!persistKey || !nativeStore?.setPersistedState) {
+      return;
+    }
+    await nativeStore.setPersistedState(persistKey, stateJson);
+  }
+
+  async function clearPersistedSubtreeState(subtreeKey: string) {
+    const persistKey = persistedSubtrees.get(subtreeKey);
+    if (!persistKey || !nativeStore?.clearPersistedState) {
+      return;
+    }
+    await nativeStore.clearPersistedState(persistKey);
+  }
+
   const subscription = eventEmitter?.addListener(
     'SharedZustandStoreChanged',
     (event: NativeChangeEvent) => {
@@ -225,44 +330,44 @@ export function createSharedStore<TState, TAction = unknown>({
         return;
       }
 
-      if (!usesSubtrees || subtreeKey === ROOT_SUBTREE_KEY) {
-        const nextState =
-          event.stateJson == null
-            ? initialState
-            : parseState<TState>(event.stateJson);
-        publish(nextState, subtreeKey, event.revision);
-        return;
-      }
-
-      const typedSubtreeKey = subtreeKey as SharedStoreSubtreeKey<TState>;
-      const nextSubtreeState =
-        event.stateJson == null
-          ? initialSubtree(typedSubtreeKey)
-          : parseState<TState[typeof typedSubtreeKey]>(event.stateJson);
-      publish(patchSubtree(typedSubtreeKey, nextSubtreeState), subtreeKey, event.revision);
+      publishJsonState(subtreeKey, event.stateJson, event.revision);
     },
   );
 
   async function hydrateSubtree(subtreeKey: string) {
     const store = requireNativeStore();
+    const initialJson = initialJsonForSubtree(subtreeKey);
+    const persistKey = persistedSubtrees.get(subtreeKey) ?? null;
+
+    if (
+      (subtreeKey === ROOT_SUBTREE_KEY && store.getOrInitState) ||
+      (subtreeKey !== ROOT_SUBTREE_KEY && store.getOrInitSubtreeState)
+    ) {
+      const hydration =
+        subtreeKey === ROOT_SUBTREE_KEY
+          ? await store.getOrInitState!(name, initialJson, persistKey)
+          : await store.getOrInitSubtreeState!(
+              name,
+              subtreeKey,
+              initialJson,
+              persistKey,
+            );
+      publishJsonState(subtreeKey, hydration.stateJson, hydration.revision);
+      return;
+    }
+
     const stateJson =
       subtreeKey === ROOT_SUBTREE_KEY
         ? await store.getState(name)
         : await store.getSubtreeState(name, subtreeKey);
 
     if (stateJson == null) {
-      const initialJson =
-        subtreeKey === ROOT_SUBTREE_KEY
-          ? stringifyState(initialState)
-          : stringifyState(
-              initialSubtree(subtreeKey as SharedStoreSubtreeKey<TState>),
-            );
       const revision =
         subtreeKey === ROOT_SUBTREE_KEY
           ? await store.setState(name, initialJson, sourceId)
           : await store.setSubtreeState(name, subtreeKey, initialJson, sourceId);
-      subtreeRevisions.set(subtreeKey, revision);
-      currentRevision = Math.max(currentRevision, revision);
+      await persistSubtreeState(subtreeKey, initialJson);
+      publishJsonState(subtreeKey, initialJson, revision);
       return;
     }
 
@@ -270,16 +375,7 @@ export function createSharedStore<TState, TAction = unknown>({
       subtreeKey === ROOT_SUBTREE_KEY
         ? await store.getRevision(name)
         : await store.getSubtreeRevision(name, subtreeKey);
-    if (subtreeKey === ROOT_SUBTREE_KEY) {
-      publish(parseState<TState>(stateJson), subtreeKey, revision);
-      return;
-    }
-    const typedSubtreeKey = subtreeKey as SharedStoreSubtreeKey<TState>;
-    publish(
-      patchSubtree(typedSubtreeKey, parseState<TState[typeof typedSubtreeKey]>(stateJson)),
-      subtreeKey,
-      revision,
-    );
+    publishJsonState(subtreeKey, stateJson, revision);
   }
 
   void Promise.all(nativeSubtreeKeys.map(hydrateSubtree)).catch(error => {
@@ -307,11 +403,13 @@ export function createSharedStore<TState, TAction = unknown>({
     async setState(partial, replace = false) {
       const nextState = resolveNextState(currentState, partial, replace);
       if (!usesSubtrees) {
+        const stateJson = stringifyState(nextState);
         const revision = await requireNativeStore().setState(
           name,
-          stringifyState(nextState),
+          stateJson,
           sourceId,
         );
+        await persistSubtreeState(ROOT_SUBTREE_KEY, stateJson);
         publish(nextState, ROOT_SUBTREE_KEY, revision);
         return revision;
       }
@@ -357,12 +455,14 @@ export function createSharedStore<TState, TAction = unknown>({
         partial,
         replace,
       );
+      const stateJson = stringifyState(nextSubtreeState);
       const revision = await requireNativeStore().setSubtreeState(
         name,
         subtreeKey,
-        stringifyState(nextSubtreeState),
+        stateJson,
         sourceId,
       );
+      await persistSubtreeState(subtreeKey, stateJson);
       publish(patchSubtree(subtreeKey, nextSubtreeState), subtreeKey, revision);
       return revision;
     },
@@ -400,12 +500,14 @@ export function createSharedStore<TState, TAction = unknown>({
           subtreeKey,
           sourceId,
         );
+        await clearPersistedSubtreeState(subtreeKey);
         publish(patchSubtree(subtreeKey, initialSubtree(subtreeKey)), subtreeKey, revision);
         return revision;
       }
 
       if (!usesSubtrees) {
         const revision = await requireNativeStore().clear(name, sourceId);
+        await clearPersistedSubtreeState(ROOT_SUBTREE_KEY);
         publish(initialState, ROOT_SUBTREE_KEY, revision);
         return revision;
       }
