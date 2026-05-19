@@ -30,6 +30,7 @@ const threadedComponents: ThreadedComponentRegistry = new Map();
 
 type ThreadedRuntimeNativeModule = {
   preloadRuntime?: (runtimeName: string) => Promise<void>;
+  prewarmRuntime?: (runtimeName: string) => Promise<void>;
   destroyRuntime?: (runtimeName: string) => Promise<void>;
   destroyAllRuntimes?: () => Promise<void>;
   getRuntimeNames?: () => Promise<string[]>;
@@ -215,26 +216,48 @@ export function ThreadedRuntimeHost({
   return <Component {...initialProps} runtimeName={runtimeName} />;
 }
 
+function prewarmRuntime(
+  runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME,
+) {
+  if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
+    return Promise.resolve();
+  }
+  return (
+    nativeRuntime?.prewarmRuntime?.(runtimeName) ??
+    nativeRuntime?.preloadRuntime?.(runtimeName) ??
+    Promise.resolve()
+  );
+}
+
 export const ThreadedRuntime = {
   defaultRuntimeName: DEFAULT_RUNTIME_NAME,
 
   preload(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
-    if (Platform.OS !== 'android') return Promise.resolve();
-    return nativeRuntime?.preloadRuntime?.(runtimeName) ?? Promise.resolve();
+    return prewarmRuntime(runtimeName);
+  },
+
+  prewarm(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
+    return prewarmRuntime(runtimeName);
   },
 
   destroy(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
-    if (Platform.OS !== 'android') return Promise.resolve();
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
+      return Promise.resolve();
+    }
     return nativeRuntime?.destroyRuntime?.(runtimeName) ?? Promise.resolve();
   },
 
   destroyAll() {
-    if (Platform.OS !== 'android') return Promise.resolve();
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
+      return Promise.resolve();
+    }
     return nativeRuntime?.destroyAllRuntimes?.() ?? Promise.resolve();
   },
 
   getRuntimeNames() {
-    if (Platform.OS !== 'android') return Promise.resolve([] as string[]);
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
+      return Promise.resolve([] as string[]);
+    }
     return (
       nativeRuntime?.getRuntimeNames?.() ?? Promise.resolve([] as string[])
     );

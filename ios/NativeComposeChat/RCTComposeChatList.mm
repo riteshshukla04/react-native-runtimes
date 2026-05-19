@@ -1,7 +1,7 @@
 #import "RCTComposeChatList.h"
 
 #import <React/RCTConversions.h>
-#import <React_RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>
+#import <React-RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>
 #import <react/renderer/components/NativeComposeChatSpec/ComponentDescriptors.h>
 #import <react/renderer/components/NativeComposeChatSpec/EventEmitters.h>
 #import <react/renderer/components/NativeComposeChatSpec/Props.h>

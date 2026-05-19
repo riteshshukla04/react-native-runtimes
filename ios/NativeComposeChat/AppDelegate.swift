@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import NativeComposeThreadedRuntime
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -17,6 +18,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
+    ThreadedRuntime.configure(withReactNativeDelegate: delegate, launchOptions: launchOptions)
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
@@ -28,6 +30,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       in: window,
       launchOptions: launchOptions
     )
+    ThreadedRuntime.prewarmRuntime("chat-thread-release-room-runtime")
 
     return true
   }

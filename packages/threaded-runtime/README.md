@@ -1,7 +1,7 @@
 # @native-compose/threaded-runtime
 
-Small React Native API for mounting selected React components in a named Android
-ReactHost/Hermes runtime.
+Small React Native API for mounting selected React components in a named
+secondary React Native/Hermes runtime.
 
 The package owns the JS registry and host API:
 
@@ -14,7 +14,7 @@ The package owns the JS registry and host API:
 - `registerThreadedComponent(name, Component)`
 - `ThreadedReactSurface`
 - `ThreadedRuntimeHost`
-- `ThreadedRuntime.preload/destroy/destroyAll/getRuntimeNames`
+- `ThreadedRuntime.prewarm/preload/destroy/destroyAll/getRuntimeNames`
 
 ## Setup
 
@@ -140,6 +140,17 @@ preloads the named runtime by default, and keeps the runtime alive when the
 screen unmounts. Set `destroyOnUnmount` when the route should release its
 secondary runtime immediately.
 
+You can also prewarm the runtime before rendering the screen:
+
+```tsx
+import {ThreadedRuntime} from '@native-compose/threaded-runtime';
+
+await ThreadedRuntime.prewarm(`conversation-${conversationId}`);
+```
+
+`prewarm` creates and starts the named secondary runtime without mounting a
+surface. `preload` is kept as a compatibility alias.
+
 Generator rules:
 
 - components must be named exports
@@ -215,20 +226,23 @@ if (global._is_it_a_list_env === true) {
 }
 ```
 
-## Android Native Implementation
+## Native Implementation
 
-This package includes an Android implementation under `android/`. It exports:
+This package includes Android and iOS implementations under `android/` and
+`ios/`. It exports:
 
 - native module `ThreadedRuntime`
 - native view manager `ThreadedRuntimeSurface`
 
-`ThreadedRuntimeSurface` creates a named secondary `ReactHost` and mounts
-`ThreadedRuntimeHost` in that runtime. The JS layer still falls back to this
-repo's older app-local names, `BackgroundListBridge` and `SecondRuntimeSurface`,
-while the package migration is in progress.
+`ThreadedRuntimeSurface` creates a named secondary runtime and mounts
+`ThreadedRuntimeHost` in that runtime. On Android this is backed by `ReactHost`;
+on iOS it is backed by `RCTHost` and a Fabric surface. The JS layer still falls
+back to this repo's older app-local names, `BackgroundListBridge` and
+`SecondRuntimeSurface`, while the package migration is in progress.
 
 The native module exposes:
 
+- `prewarmRuntime(runtimeName)`
 - `preloadRuntime(runtimeName)`
 - `destroyRuntime(runtimeName)`
 - `destroyAllRuntimes()`
@@ -257,3 +271,57 @@ ThreadedRuntime.setExtraReactPackagesProvider {
 
 Those packages are installed only in the secondary runtime. The example app uses
 this to expose the shared zustand module and background list host to threaded RN.
+
+Host apps can prewarm a runtime from Kotlin before a threaded screen is needed:
+
+```kotlin
+import com.nativecompose.threadedruntime.ThreadedRuntime
+
+class MainApplication : Application(), ReactApplication {
+  override fun onCreate() {
+    super.onCreate()
+
+    ThreadedRuntime.setExtraReactPackagesProvider {
+      listOf(AppSpecificPackage())
+    }
+
+    loadReactNative(this)
+    ThreadedRuntime.prewarmRuntime(
+      applicationContext,
+      "conversation-inbox-runtime",
+    )
+  }
+}
+```
+
+This creates and starts the named `ReactHost` without attaching a surface. When
+`ThreadedScreen` later mounts with the same `runtimeName`, native reuses the
+prewarmed runtime and resumes it with the current Activity.
+
+Host apps can prewarm a runtime from Swift after configuring the package with
+the app's React Native delegate:
+
+```swift
+import NativeComposeThreadedRuntime
+
+let delegate = ReactNativeDelegate()
+let factory = RCTReactNativeFactory(delegate: delegate)
+delegate.dependencyProvider = RCTAppDependencyProvider()
+
+ThreadedRuntime.configure(
+  withReactNativeDelegate: delegate,
+  launchOptions: launchOptions
+)
+
+factory.startReactNative(
+  withModuleName: "NativeComposeChat",
+  in: window,
+  launchOptions: launchOptions
+)
+
+ThreadedRuntime.prewarmRuntime("conversation-inbox-runtime")
+```
+
+This creates and starts the named `RCTHost` without attaching a surface. When
+`ThreadedScreen` later mounts with the same `runtimeName`, native reuses the
+prewarmed host.

@@ -7,8 +7,10 @@
   "react-native": "src/index.ts",
   "files": [
     "android",
+    "ios",
     "metro.d.ts",
     "metro.js",
+    "NativeComposeThreadedRuntime.podspec",
     "README.md",
     "src"
   ],

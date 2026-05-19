@@ -30,5 +30,9 @@ class MainApplication : Application(), ReactApplication {
       listOf(BackgroundListRendererPackage(), EaseViewPackage())
     }
     loadReactNative(this)
+    ThreadedRuntime.prewarmRuntime(
+        applicationContext,
+        "chat-thread-release-room-runtime",
+    )
   }
 }

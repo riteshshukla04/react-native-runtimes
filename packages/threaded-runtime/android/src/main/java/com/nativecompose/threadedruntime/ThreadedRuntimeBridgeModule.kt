@@ -14,11 +14,16 @@ class ThreadedRuntimeBridgeModule(private val reactContext: ReactApplicationCont
 
   @ReactMethod
   fun preloadRuntime(runtimeName: String?, promise: Promise) {
+    prewarmRuntime(runtimeName, promise)
+  }
+
+  @ReactMethod
+  fun prewarmRuntime(runtimeName: String?, promise: Promise) {
     try {
-      ThreadedRuntime.preloadRuntime(reactContext, runtimeName.orDefaultRuntimeName())
+      ThreadedRuntime.prewarmRuntime(reactContext, runtimeName.orDefaultRuntimeName())
       promise.resolve(null)
     } catch (error: Throwable) {
-      promise.reject("ERR_THREADED_RUNTIME_PRELOAD", error)
+      promise.reject("ERR_THREADED_RUNTIME_PREWARM", error)
     }
   }
 

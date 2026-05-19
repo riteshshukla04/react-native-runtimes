@@ -2,6 +2,7 @@ package com.nativecompose.threadedruntime
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.JSBundleLoader
@@ -24,6 +25,7 @@ import java.io.File
 object ThreadedRuntime {
   const val DEFAULT_RUNTIME_NAME = "background-list"
   const val DEFAULT_HOST_APP_NAME = "ThreadedRuntimeHost"
+  private const val LOG_TAG = "ThreadedRuntime"
 
   private val hosts = mutableMapOf<String, ReactHost>()
   private var extraReactPackagesProvider: (() -> List<ReactPackage>)? = null
@@ -43,8 +45,18 @@ object ThreadedRuntime {
       ensureHost(reactContext.applicationContext, reactContext.currentActivity, runtimeName)
           .createSurface(reactContext, appName, props)
 
-  fun preloadRuntime(context: Context, runtimeName: String) {
-    ensureHost(context.applicationContext, null, runtimeName).start()
+  fun preloadRuntime(context: Context, runtimeName: String) = prewarmRuntime(context, runtimeName)
+
+  @JvmOverloads
+  @JvmStatic
+  fun prewarmRuntime(context: Context, runtimeName: String = DEFAULT_RUNTIME_NAME) {
+    val normalizedRuntimeName = runtimeName.ifBlank { DEFAULT_RUNTIME_NAME }
+    val didReuseHost = hosts.containsKey(normalizedRuntimeName)
+    ensureHost(context.applicationContext, null, normalizedRuntimeName).start()
+    Log.i(
+        LOG_TAG,
+        "runtime prewarm runtimeName=$normalizedRuntimeName " +
+            "reused=$didReuseHost active=${hosts.keys}")
   }
 
   fun destroyRuntime(runtimeName: String) {
