@@ -68,6 +68,24 @@ const message = chatStore.useStore(
 - Subtree reducers are serialized per subtree by the caller today; the native
   state commits do not lock unrelated subtrees.
 
+## Native contract
+
+The JS package expects a native module named `SharedZustandStore` with:
+
+- `getState(storeName)`
+- `setState(storeName, stateJson, source)`
+- `getRevision(storeName)`
+- `clear(storeName, source)`
+- `getSubtreeState(storeName, subtreeKey)`
+- `setSubtreeState(storeName, subtreeKey, stateJson, source)`
+- `getSubtreeRevision(storeName, subtreeKey)`
+- `clearSubtree(storeName, subtreeKey, source)`
+
+The module must emit `SharedZustandStoreChanged` to every active React runtime
+after commits. This repo currently provides the Android implementation in the
+example app; the JS boundary is package-shaped so native code can move behind
+autolinking without app JS changes.
+
 The next architectural step is a reducer runtime: a non-UI Hermes runtime that
 loads the app bundle, registers reducers, receives native actions, and commits
 the reduced JSON state back into this singleton. For native-module access from

@@ -3,4 +3,6 @@ plugins { id("com.facebook.react.settings") }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'NativeComposeChat'
 include ':app'
+include ':native-compose-threaded-runtime'
+project(':native-compose-threaded-runtime').projectDir = new File(rootProject.projectDir, '../packages/threaded-runtime/android')
 includeBuild('../node_modules/@react-native/gradle-plugin')

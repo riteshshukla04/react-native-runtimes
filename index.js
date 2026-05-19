@@ -15,7 +15,7 @@ if (isListEnvironment) {
   );
   AppRegistry.registerComponent(
     'ThreadedRuntimeHost',
-    () => require('./src/threadedRuntime/ThreadedRuntime').ThreadedRuntimeHost,
+    () => require('@native-compose/threaded-runtime').ThreadedRuntimeHost,
   );
   AppRegistry.registerComponent(
     'ComposeChatSecondRuntimeRnList',
