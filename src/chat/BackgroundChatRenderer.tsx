@@ -33,6 +33,9 @@ export default function BackgroundChatRenderer({
   useEffect(() => {
     sourceRef.current = getSource(listName);
     setDataState(sourceRef.current.toNativeState(true));
+    console.info(
+      `RuntimeCheck native2rn renderer listName=${listName} runtime=${runtimeKind()}`,
+    );
 
     const dataSubscription = backgroundEvents.addListener(
       'ComposeChatBackgroundDataState',
@@ -73,6 +76,13 @@ export default function BackgroundChatRenderer({
         </ComposeChatBackgroundHostNativeComponent>
       )}
     </RuntimeItemRenderer>
+  );
+}
+
+function runtimeKind() {
+  return (
+    (globalThis as {__COMPOSE_CHAT_LIST_ENV__?: {kind?: string}})
+      .__COMPOSE_CHAT_LIST_ENV__?.kind ?? 'main'
   );
 }
 

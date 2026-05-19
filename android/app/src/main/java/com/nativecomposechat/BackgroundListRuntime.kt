@@ -19,11 +19,13 @@ import com.facebook.react.defaults.DefaultComponentsRegistry
 import com.facebook.react.defaults.DefaultReactHostDelegate
 import com.facebook.react.defaults.DefaultTurboModuleManagerDelegate
 import com.facebook.react.fabric.ComponentFactory
+import com.facebook.react.interfaces.fabric.ReactSurface
 import com.facebook.react.modules.core.DefaultHardwareBackBtnHandler
 import com.facebook.react.runtime.ReactHostImpl
 import com.facebook.react.runtime.hermes.HermesInstance
 import com.facebook.react.shell.MainReactPackage
 import com.facebook.react.uimanager.ThemedReactContext
+import com.ease.EaseViewPackage
 import java.io.File
 import java.lang.ref.WeakReference
 
@@ -54,14 +56,20 @@ object BackgroundListRuntime {
       appName: String,
       listName: String,
   ): View {
-    val reactHost = ensureHost(reactContext)
     val props = Bundle()
     props.putString("listName", listName)
-    val reactSurface = reactHost.createSurface(reactContext, appName, props)
+    val reactSurface = createSurface(reactContext, appName, props)
     reactSurface.view?.visibility = View.INVISIBLE
     reactSurface.start()
     return checkNotNull(reactSurface.view)
   }
+
+  @OptIn(UnstableReactNativeAPI::class)
+  fun createSurface(
+      reactContext: ThemedReactContext,
+      appName: String,
+      props: Bundle,
+  ): ReactSurface = ensureHost(reactContext).createSurface(reactContext, appName, props)
 
   fun attachModule(nextModule: BackgroundListBridgeModule) {
     module = nextModule
@@ -167,7 +175,8 @@ object BackgroundListRuntime {
         DefaultReactHostDelegate(
             jsMainModulePath = "index",
             jsBundleLoader = BackgroundListEnvironmentBundleLoader(reactContext.applicationContext),
-            reactPackages = listOf(MainReactPackage(), BackgroundListRendererPackage()),
+            reactPackages =
+                listOf(MainReactPackage(), BackgroundListRendererPackage(), EaseViewPackage()),
             jsRuntimeFactory = HermesInstance(),
             turboModuleManagerDelegateBuilder = DefaultTurboModuleManagerDelegate.Builder(),
             exceptionHandler = { throw it },

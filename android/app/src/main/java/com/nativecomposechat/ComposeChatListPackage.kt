@@ -11,5 +11,6 @@ class ComposeChatListPackage : ReactPackage {
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext
-  ): List<ViewManager<*, *>> = listOf(ComposeChatListManager(), ComposeChatListItemManager())
+  ): List<ViewManager<*, *>> =
+      listOf(ComposeChatListManager(), ComposeChatListItemManager(), SecondRuntimeSurfaceManager())
 }

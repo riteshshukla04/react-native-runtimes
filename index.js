@@ -11,6 +11,10 @@ if (isListEnvironment) {
     'ComposeChatBackgroundRenderer',
     () => require('./src/chat/BackgroundChatRenderer').default,
   );
+  AppRegistry.registerComponent(
+    'ComposeChatSecondRuntimeRnList',
+    () => require('./App').SecondRuntimeRnListApp,
+  );
 } else {
   const {name: appName} = require('./app.json');
   AppRegistry.registerComponent(appName, () => require('./App').default);

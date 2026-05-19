@@ -40,9 +40,11 @@ import type {
 import VersionedComposeChatList, {
   type VersionedComposeChatListRef,
 } from './src/native/VersionedComposeChatList';
+import NativeSecondRuntimeSurface from './src/native/NativeSecondRuntimeSurface';
 
 type NativeBenchmarkMode = 'main' | 'background';
-type RnBenchmarkMode = 'animated' | 'flashlist' | 'legendlist';
+type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
+type RnBenchmarkMode = 'animated' | 'legendlist-main' | SecondRuntimeRnBenchmarkMode;
 type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode;
 
 function App() {
@@ -133,8 +135,14 @@ function AppContent() {
         <TabButton
           active={mode === 'legendlist'}
           id="tab-legendlist"
-          label="LegendList"
+          label="Legend 2RN"
           onPress={() => setMode('legendlist')}
+        />
+        <TabButton
+          active={mode === 'legendlist-main'}
+          id="tab-legendlist-main"
+          label="Legend Main"
+          onPress={() => setMode('legendlist-main')}
         />
         <View
           accessibilityLabel="block-js-control"
@@ -152,8 +160,14 @@ function AppContent() {
           />
         </View>
       </View>
-      {isRnBenchmarkMode(mode) ? (
+      {mode === 'animated' || mode === 'legendlist-main' ? (
         <RnListBenchmarkScreen key={mode} blockStatus={blockStatus} mode={mode} />
+      ) : mode === 'flashlist' || mode === 'legendlist' ? (
+        <SecondRuntimeRnListSurface
+          key={mode}
+          blockStatus={blockStatus}
+          mode={mode}
+        />
       ) : (
         <ChatBenchmarkScreen
           key={mode}
@@ -166,8 +180,41 @@ function AppContent() {
   );
 }
 
-function isRnBenchmarkMode(mode: BenchmarkMode): mode is RnBenchmarkMode {
-  return mode === 'animated' || mode === 'flashlist' || mode === 'legendlist';
+function SecondRuntimeRnListSurface({
+  blockStatus,
+  mode,
+}: {
+  blockStatus: string;
+  mode: SecondRuntimeRnBenchmarkMode;
+}) {
+  return (
+    <NativeSecondRuntimeSurface
+      accessibilityLabel={`second-runtime-${mode}`}
+      appName="ComposeChatSecondRuntimeRnList"
+      blockStatus="second-runtime"
+      mode={mode}
+      style={styles.secondRuntimeSurface}
+      surfaceKey={mode}
+      testID={`second-runtime-${mode}`}
+    />
+  );
+}
+
+export function SecondRuntimeRnListApp({
+  blockStatus = 'second-runtime',
+  mode = 'flashlist',
+}: {
+  blockStatus?: string;
+  mode?: string;
+}) {
+  const normalizedMode: SecondRuntimeRnBenchmarkMode =
+    mode === 'legendlist' ? 'legendlist' : 'flashlist';
+  return (
+    <RnListBenchmarkScreen
+      blockStatus={`${blockStatus} / ${runtimeKind()}`}
+      mode={normalizedMode}
+    />
+  );
 }
 
 function ChatBenchmarkScreen({
@@ -386,6 +433,10 @@ function RnListBenchmarkScreen({
     sourceRef.current = new VersionedChatDataSource(createRandomMessages(10_000));
   }
 
+  useEffect(() => {
+    console.info(`RuntimeCheck rnList mode=${mode} runtime=${runtimeKind()}`);
+  }, [mode]);
+
   const source = sourceRef.current;
   const [dataVersion, setDataVersion] = useState(source.version);
   const [itemCount, setItemCount] = useState(source.count);
@@ -568,7 +619,7 @@ function renderRnList({
     );
   }
 
-  if (mode === 'legendlist') {
+  if (mode === 'legendlist' || mode === 'legendlist-main') {
     return (
       <LegendList
         {...commonProps}
@@ -603,12 +654,21 @@ function renderRnList({
 function titleForRnMode(mode: RnBenchmarkMode) {
   switch (mode) {
     case 'flashlist':
-      return 'RN FlashList + react-native-ease';
+      return 'RN FlashList 2RN + react-native-ease';
     case 'legendlist':
-      return 'RN LegendList + react-native-ease';
+      return 'RN LegendList 2RN + react-native-ease';
+    case 'legendlist-main':
+      return 'RN LegendList Main + react-native-ease';
     default:
       return 'RN FlatList + react-native-ease';
   }
+}
+
+function runtimeKind() {
+  return (
+    (globalThis as {__COMPOSE_CHAT_LIST_ENV__?: {kind?: string}})
+      .__COMPOSE_CHAT_LIST_ENV__?.kind ?? 'main'
+  );
 }
 
 function scrollRnListToIndex(
@@ -845,6 +905,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   list: {
+    flex: 1,
+  },
+  secondRuntimeSurface: {
     flex: 1,
   },
   layoutProbe: {
