@@ -67,6 +67,19 @@ yarn-error.log
 # testing
 /coverage
 
+# Local debugging artifacts
+/*.log
+/*.png
+/*.xml
+/*.trace
+/*.pftrace
+/*.pbtx
+/*-gfxinfo.txt
+perfetto-*.txt
+perfetto-*.json
+/*.heapprofd
+/*.perfetto-trace
+
 # Yarn
 .yarn/*
 !.yarn/patches
