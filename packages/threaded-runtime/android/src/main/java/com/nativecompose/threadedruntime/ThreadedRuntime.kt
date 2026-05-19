@@ -63,7 +63,10 @@ object ThreadedRuntime {
       activity: Activity?,
       runtimeName: String,
   ): ReactHost {
-    hosts[runtimeName]?.let { return it }
+    hosts[runtimeName]?.let {
+      resumeHost(it, activity)
+      return it
+    }
 
     val componentFactory = ComponentFactory()
     DefaultComponentsRegistry.register(componentFactory)
@@ -87,11 +90,15 @@ object ThreadedRuntime {
             isAppDebuggable(context),
         )
 
-    if (activity != null) {
-      nextHost.onHostResume(activity, activity as? DefaultHardwareBackBtnHandler)
-    }
+    resumeHost(nextHost, activity)
 
     return nextHost.also { hosts[runtimeName] = it }
+  }
+
+  private fun resumeHost(host: ReactHost, activity: Activity?) {
+    if (activity != null) {
+      host.onHostResume(activity, activity as? DefaultHardwareBackBtnHandler)
+    }
   }
 
   private fun buildReactPackages(): List<ReactPackage> =

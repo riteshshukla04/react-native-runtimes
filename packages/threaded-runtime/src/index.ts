@@ -6,8 +6,10 @@ export {
   ThreadedReactSurface,
   ThreadedRuntime,
   ThreadedRuntimeHost,
+  ThreadedScreen,
   type ThreadedComponent,
   type ThreadedProps,
   type ThreadedReactSurfaceProps,
   type ThreadedRuntimeName,
+  type ThreadedScreenProps,
 } from './ThreadedRuntime';

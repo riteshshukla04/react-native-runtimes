@@ -7,6 +7,7 @@ The package owns the JS registry and host API:
 
 - `threadedComponent(name, Component)`
 - `Threaded`
+- `ThreadedScreen`
 - `withThreadedRuntime(config, options)` from
   `@native-compose/threaded-runtime/metro`
 - `registerLazyThreadedComponent(name, loadComponent)`
@@ -22,10 +23,8 @@ The package owns the JS registry and host API:
 Add the Metro wrapper from this package to your app's `metro.config.js`:
 
 ```js
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
-const {
-  withThreadedRuntime,
-} = require('@native-compose/threaded-runtime/metro');
+const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const {withThreadedRuntime} = require('@native-compose/threaded-runtime/metro');
 
 const config = {};
 
@@ -63,7 +62,7 @@ The generated entry registers lazy component loaders and the
 `ThreadedRuntimeHost` root:
 
 ```js
-import { AppRegistry } from 'react-native';
+import {AppRegistry} from 'react-native';
 import {
   ThreadedRuntimeHost,
   registerLazyThreadedComponent,
@@ -82,12 +81,15 @@ component name.
 
 ### 3. Mark Components And Render Them
 
-The low-level API below is explicit, but most consumers should make a component
-opt in once and then render it through a secondary runtime like a normal React
-component.
+Most consumers should make a component opt in once and then render it through a
+secondary runtime like a normal React component.
 
 ```tsx
-import { Threaded, threadedComponent } from '@native-compose/threaded-runtime';
+import {
+  Threaded,
+  ThreadedScreen,
+  threadedComponent,
+} from '@native-compose/threaded-runtime';
 
 type MessageListProps = {
   conversationId: string;
@@ -103,7 +105,7 @@ export const MessageList = threadedComponent<MessageListProps>(
 
 <Threaded
   component={MessageList}
-  props={{ conversationId, initialIndex: 120 }}
+  props={{conversationId, initialIndex: 120}}
   runtimeName="messages-runtime"
 />;
 ```
@@ -113,6 +115,30 @@ mounted by another runtime. `Threaded` serializes `props` and mounts a native
 `ThreadedRuntimeSurface` with the generated component name. Props must be
 JSON-serializable; large or mutable data should be passed by id/key and read
 through a shared native store.
+
+For navigation or chat apps where the whole route should live on another JS
+runtime, use `ThreadedScreen`:
+
+```tsx
+export const ConversationScreen = threadedComponent<ConversationScreenProps>(
+  'ConversationScreen',
+  function ConversationScreen(props) {
+    return <ConversationRoute {...props} />;
+  },
+);
+
+<ThreadedScreen
+  component={ConversationScreen}
+  props={{conversationId}}
+  runtimeName={`conversation-${conversationId}`}
+  testID="conversation-threaded-screen"
+/>;
+```
+
+`ThreadedScreen` renders the threaded surface as a full-size screen (`flex: 1`),
+preloads the named runtime by default, and keeps the runtime alive when the
+screen unmounts. Set `destroyOnUnmount` when the route should release its
+secondary runtime immediately.
 
 Generator rules:
 
@@ -128,9 +154,7 @@ Generator rules:
 The Metro helper is exported from the package as:
 
 ```js
-const {
-  withThreadedRuntime,
-} = require('@native-compose/threaded-runtime/metro');
+const {withThreadedRuntime} = require('@native-compose/threaded-runtime/metro');
 ```
 
 In same-bundle mode the generated lazy registry avoids eagerly initializing
@@ -146,9 +170,9 @@ code must not mount the main app by itself. This is useful when you are not usin
 the Metro generated registry.
 
 ```tsx
-import { registerThreadedComponent } from '@native-compose/threaded-runtime';
+import {registerThreadedComponent} from '@native-compose/threaded-runtime';
 
-function ExpensivePanel({ runtimeName }: { runtimeName?: string }) {
+function ExpensivePanel({runtimeName}: {runtimeName?: string}) {
   return <Panel title={runtimeName ?? 'threaded'} />;
 }
 
@@ -158,13 +182,13 @@ registerThreadedComponent('ExpensivePanel', ExpensivePanel);
 ## Mount A Threaded Surface
 
 ```tsx
-import { ThreadedReactSurface } from '@native-compose/threaded-runtime';
+import {ThreadedReactSurface} from '@native-compose/threaded-runtime';
 
 <ThreadedReactSurface
   componentName="ExpensivePanel"
-  initialProps={{ mode: 'compare' }}
+  initialProps={{mode: 'compare'}}
   runtimeName="analytics-runtime"
-  style={{ flex: 1 }}
+  style={{flex: 1}}
   surfaceKey="analytics-panel"
 />;
 ```
@@ -180,7 +204,7 @@ register `ThreadedRuntimeHost` under the same app name that native uses when it
 creates a surface:
 
 ```js
-const { AppRegistry } = require('react-native');
+const {AppRegistry} = require('react-native');
 
 if (global._is_it_a_list_env === true) {
   require('./App'); // component registrations

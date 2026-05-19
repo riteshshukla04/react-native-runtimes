@@ -13,6 +13,7 @@ import {
   type ListRenderItem,
   Platform,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Switch,
@@ -41,7 +42,11 @@ import type {
 import VersionedComposeChatList, {
   type VersionedComposeChatListRef,
 } from './src/native/VersionedComposeChatList';
-import {threadedComponent, Threaded} from '@native-compose/threaded-runtime';
+import {
+  threadedComponent,
+  Threaded,
+  ThreadedScreen,
+} from '@native-compose/threaded-runtime';
 
 type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
@@ -49,9 +54,21 @@ type RnBenchmarkMode =
   | 'animated'
   | 'legendlist-main'
   | SecondRuntimeRnBenchmarkMode;
-type SharedRuntimeMode = 'shared-tree' | 'poke-shared';
+type SharedRuntimeMode =
+  | 'shared-tree'
+  | 'poke-shared'
+  | 'threaded-chat-screen'
+  | 'threaded-chat-app';
 type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
 type SharedTreeNodeId = 'root' | 'left' | 'right' | 'leftLeaf' | 'rightLeaf';
+type ChatThreadSummary = {
+  id: string;
+  title: string;
+  participants: string;
+  preview: string;
+  unreadCount: number;
+  messageCount: number;
+};
 type SharedTreeState = {
   nodes: Record<SharedTreeNodeId, string>;
   interaction: {
@@ -82,6 +99,41 @@ type PokemonSharedState = {
 };
 
 const POKEMON_PAGE_SIZE = 24;
+const CHAT_THREADS: ChatThreadSummary[] = [
+  {
+    id: 'release-room',
+    title: 'Release room',
+    participants: 'Ava, Noah, Mia',
+    preview: 'Can we validate the threaded route before the release build?',
+    unreadCount: 4,
+    messageCount: 96,
+  },
+  {
+    id: 'support-escalation',
+    title: 'Support escalation',
+    participants: 'Iris, Theo',
+    preview: 'The customer is still seeing blanks after a small scroll.',
+    unreadCount: 2,
+    messageCount: 72,
+  },
+  {
+    id: 'mobile-platform',
+    title: 'Mobile platform',
+    participants: 'Sofia, Leo, Nora',
+    preview: 'Let us compare main runtime, threaded runtime, and list reuse.',
+    unreadCount: 7,
+    messageCount: 118,
+  },
+  {
+    id: 'design-review',
+    title: 'Design review',
+    participants: 'Maya, Eli',
+    preview: 'The chat cells need stable sizing and visible indices for debug.',
+    unreadCount: 0,
+    messageCount: 58,
+  },
+];
+const DEFAULT_CHAT_THREAD = CHAT_THREADS[0];
 
 const TREE_COLORS = ['#0F766E', '#7C3AED', '#DC2626', '#2563EB', '#EA580C'];
 const TREE_NODES: Array<{
@@ -286,6 +338,18 @@ function AppContent() {
           label="Poke Shared"
           onPress={() => setMode('poke-shared')}
         />
+        <TabButton
+          active={mode === 'threaded-chat-screen'}
+          id="tab-threaded-chat-screen"
+          label="Chat Screen"
+          onPress={() => setMode('threaded-chat-screen')}
+        />
+        <TabButton
+          active={mode === 'threaded-chat-app'}
+          id="tab-threaded-chat-app"
+          label="Chat App"
+          onPress={() => setMode('threaded-chat-app')}
+        />
         <View
           accessibilityLabel="block-js-control"
           style={styles.blockSwitch}
@@ -306,6 +370,10 @@ function AppContent() {
         <SharedTreeRuntimeScreen />
       ) : mode === 'poke-shared' ? (
         <PokemonRuntimeScreen />
+      ) : mode === 'threaded-chat-screen' ? (
+        <ThreadedChatScreenSurface blockStatus={blockStatus} />
+      ) : mode === 'threaded-chat-app' ? (
+        <ThreadedChatAppExample blockStatus={blockStatus} />
       ) : mode === 'animated' || mode === 'legendlist-main' ? (
         <RnListBenchmarkScreen
           key={mode}
@@ -326,6 +394,252 @@ function AppContent() {
           blockStatus={blockStatus}
         />
       )}
+    </View>
+  );
+}
+
+function ThreadedChatScreenSurface({blockStatus}: {blockStatus: string}) {
+  return (
+    <ThreadedScreen
+      accessibilityLabel="threaded-chat-screen"
+      component={ThreadedChatScreenApp}
+      props={{
+        blockStatus: `threaded screen / ${blockStatus}`,
+        initialMessageCount: DEFAULT_CHAT_THREAD.messageCount,
+        participants: DEFAULT_CHAT_THREAD.participants,
+        threadId: DEFAULT_CHAT_THREAD.id,
+        threadTitle: DEFAULT_CHAT_THREAD.title,
+      }}
+      runtimeName="threaded-chat-screen-runtime"
+      style={styles.threadedScreenSurface}
+      testID="threaded-chat-screen"
+    />
+  );
+}
+
+function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const selectedThread =
+    CHAT_THREADS.find(thread => thread.id === selectedThreadId) ?? null;
+
+  if (selectedThread) {
+    return (
+      <View
+        accessibilityLabel="threaded-chat-app-conversation"
+        style={styles.threadedChatAppScreen}
+        testID="threaded-chat-app-conversation">
+        <View style={styles.threadedChatAppNav}>
+          <ActionButton
+            id="threaded-chat-app-back"
+            label="Back"
+            onPress={() => setSelectedThreadId(null)}
+          />
+          <View style={styles.threadedChatTitleBlock}>
+            <Text style={styles.title}>{selectedThread.title}</Text>
+            <Text style={styles.subtitle}>
+              Main RN chose the thread. Conversation below is threaded.
+            </Text>
+          </View>
+        </View>
+        <ThreadedScreen
+          accessibilityLabel={`threaded-chat-app-screen-${selectedThread.id}`}
+          component={ThreadedChatScreenApp}
+          props={{
+            blockStatus: `selected on main runtime / ${blockStatus}`,
+            initialMessageCount: selectedThread.messageCount,
+            participants: selectedThread.participants,
+            threadId: selectedThread.id,
+            threadTitle: selectedThread.title,
+          }}
+          runtimeName={`chat-thread-${selectedThread.id}-runtime`}
+          style={styles.threadedScreenSurface}
+          surfaceKey={`chat-thread-${selectedThread.id}`}
+          testID={`threaded-chat-app-screen-${selectedThread.id}`}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View
+      accessibilityLabel="threaded-chat-thread-picker"
+      style={styles.threadPickerScreen}
+      testID="threaded-chat-thread-picker">
+      <View style={styles.header}>
+        <Text style={styles.title}>Threaded chat app</Text>
+        <Text style={styles.subtitle}>
+          Thread list is main RN. Opening a thread mounts the chat screen on a
+          second runtime.
+        </Text>
+      </View>
+      <View style={styles.threadPickerList}>
+        {CHAT_THREADS.map(thread => (
+          <Pressable
+            accessibilityLabel={`open-chat-thread-${thread.id}`}
+            key={thread.id}
+            onPress={() => setSelectedThreadId(thread.id)}
+            style={styles.threadRow}
+            testID={`open-chat-thread-${thread.id}`}>
+            <View style={styles.threadRowText}>
+              <View style={styles.threadRowTitleLine}>
+                <Text style={styles.threadRowTitle}>{thread.title}</Text>
+                {thread.unreadCount > 0 ? (
+                  <Text style={styles.threadUnread}>{thread.unreadCount}</Text>
+                ) : null}
+              </View>
+              <Text style={styles.threadParticipants}>
+                {thread.participants}
+              </Text>
+              <Text style={styles.threadPreview}>{thread.preview}</Text>
+            </View>
+            <Text style={styles.threadMessageCount}>{thread.messageCount}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+type ThreadedChatScreenAppProps = {
+  blockStatus?: string;
+  initialMessageCount?: number;
+  participants?: string;
+  runtimeName?: string;
+  threadId?: string;
+  threadTitle?: string;
+};
+
+export const ThreadedChatScreenApp =
+  threadedComponent<ThreadedChatScreenAppProps>(
+    'ThreadedChatScreen',
+    function ThreadedChatScreenApp({
+      blockStatus = 'threaded screen',
+      initialMessageCount = DEFAULT_CHAT_THREAD.messageCount,
+      participants = DEFAULT_CHAT_THREAD.participants,
+      runtimeName,
+      threadId = DEFAULT_CHAT_THREAD.id,
+      threadTitle = DEFAULT_CHAT_THREAD.title,
+    }: ThreadedChatScreenAppProps) {
+      return (
+        <ThreadedChatScreenContent
+          blockStatus={blockStatus}
+          initialMessageCount={initialMessageCount}
+          participants={participants}
+          runtimeName={runtimeName}
+          threadId={threadId}
+          threadTitle={threadTitle}
+        />
+      );
+    },
+  );
+
+function ThreadedChatScreenContent({
+  blockStatus,
+  initialMessageCount,
+  participants,
+  runtimeName,
+  threadId,
+  threadTitle,
+}: {
+  blockStatus: string;
+  initialMessageCount: number;
+  participants: string;
+  runtimeName?: string;
+  threadId: string;
+  threadTitle: string;
+}) {
+  const sourceRef = useRef<VersionedChatDataSource | null>(null);
+  const nextIdRef = useRef(1_000);
+
+  if (sourceRef.current == null) {
+    sourceRef.current = new VersionedChatDataSource(
+      createRandomMessages(initialMessageCount),
+    );
+  }
+
+  const source = sourceRef.current;
+  const [dataVersion, setDataVersion] = useState(source.version);
+  const [itemCount, setItemCount] = useState(source.count);
+  const rows = useMemo(
+    () =>
+      Array.from({length: itemCount}, (_, index) => source.renderItem(index))
+        .filter(item => item != null)
+        .reverse(),
+    [dataVersion, itemCount, source],
+  );
+
+  useEffect(() => {
+    console.info(
+      `RuntimeCheck threadedChatScreen runtime=${
+        runtimeName ?? runtimeKind()
+      } threadId=${threadId} rows=${itemCount}`,
+    );
+  }, [itemCount, runtimeName, threadId]);
+
+  function publishState() {
+    setDataVersion(source.version);
+    setItemCount(source.count);
+  }
+
+  function addReply() {
+    const id = `${threadId}-${nextIdRef.current++}`;
+    source.addAtIndex(0, createRandomMessage(id, nextIdRef.current));
+    publishState();
+  }
+
+  function editLatest() {
+    source.updateItem(0, {
+      body: `Threaded screen edit v${
+        source.version + 1
+      }. ${threadTitle} is running in ${runtimeName ?? runtimeKind()}.`,
+    });
+    publishState();
+  }
+
+  return (
+    <View
+      accessibilityLabel="threaded-chat-screen-content"
+      style={styles.threadedChatScreen}
+      testID="threaded-chat-screen-content">
+      <View style={styles.threadedChatHeader}>
+        <View style={styles.threadedChatTitleBlock}>
+          <Text style={styles.title}>{threadTitle}</Text>
+          <Text style={styles.subtitle}>
+            {itemCount} messages / v{dataVersion} /{' '}
+            {runtimeName ?? runtimeKind()} / {participants} / {blockStatus}
+          </Text>
+        </View>
+        <View style={styles.actions}>
+          <ActionButton
+            id="threaded-chat-screen-add"
+            label="+"
+            onPress={addReply}
+          />
+          <ActionButton
+            id="threaded-chat-screen-edit"
+            label="Edit"
+            onPress={editLatest}
+          />
+        </View>
+      </View>
+      <ScrollView
+        accessibilityLabel="threaded-chat-screen-scroll"
+        contentContainerStyle={styles.threadedChatContent}
+        style={styles.list}
+        testID="threaded-chat-screen-scroll">
+        {rows.map(item => (
+          <ChatBubble
+            key={`${item.id}:${item.renderVersion}`}
+            item={item}
+            onReaction={reaction => {
+              source.toggleReaction(item.index, reaction);
+              publishState();
+            }}
+            reactionPrefix="threaded-screen-reaction"
+            rowPrefix="threaded-screen-row"
+          />
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -1517,6 +1831,111 @@ const styles = StyleSheet.create({
   },
   secondRuntimeSurface: {
     flex: 1,
+  },
+  threadedScreenSurface: {
+    flex: 1,
+  },
+  threadedChatScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  threadedChatHeader: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  threadedChatTitleBlock: {
+    flex: 1,
+  },
+  threadedChatContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  threadedChatAppScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  threadedChatAppNav: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  threadPickerScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  threadPickerList: {
+    gap: 10,
+    padding: 12,
+  },
+  threadRow: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 108,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  threadRowText: {
+    flex: 1,
+    gap: 3,
+  },
+  threadRowTitleLine: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  threadRowTitle: {
+    color: '#111827',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  threadUnread: {
+    backgroundColor: '#B91C1C',
+    borderRadius: 999,
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    minWidth: 24,
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    textAlign: 'center',
+  },
+  threadParticipants: {
+    color: '#4B5563',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  threadPreview: {
+    color: '#6B7280',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  threadMessageCount: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '800',
+    minWidth: 38,
+    textAlign: 'right',
   },
   sharedTreeScreen: {
     flex: 1,

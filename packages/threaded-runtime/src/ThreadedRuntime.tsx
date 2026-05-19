@@ -1,4 +1,9 @@
-import React, {type ComponentType, type ReactElement, useMemo} from 'react';
+import React, {
+  type ComponentType,
+  type ReactElement,
+  useEffect,
+  useMemo,
+} from 'react';
 import {
   NativeModules,
   Platform,
@@ -9,6 +14,7 @@ import NativeThreadedRuntimeSurface from './NativeThreadedRuntimeSurface';
 
 const DEFAULT_RUNTIME_NAME = 'background-list';
 const DEFAULT_HOST_APP_NAME = 'ThreadedRuntimeHost';
+const THREADED_SCREEN_STYLE: ViewStyle = {flex: 1};
 
 export type ThreadedComponent<Props extends object = Record<string, never>> =
   ComponentType<Props> & {
@@ -45,6 +51,12 @@ export type ThreadedProps<Props extends object = Record<string, never>> = {
   surfaceKey?: string;
   testID?: string;
 };
+
+export type ThreadedScreenProps<Props extends object = Record<string, never>> =
+  ThreadedProps<Props> & {
+    destroyOnUnmount?: boolean;
+    preload?: boolean;
+  };
 
 export type ThreadedReactSurfaceProps<
   Props extends object = Record<string, never>,
@@ -100,6 +112,45 @@ export function Threaded<Props extends object>({
       runtimeName={runtimeName}
       style={style}
       surfaceKey={surfaceKey}
+      testID={testID}
+    />
+  );
+}
+
+export function ThreadedScreen<Props extends object>({
+  accessibilityLabel,
+  component,
+  destroyOnUnmount = false,
+  preload = true,
+  props,
+  runtimeName,
+  style,
+  surfaceKey,
+  testID,
+}: ThreadedScreenProps<Props>) {
+  const threadedName = component.__threadedRuntime.name;
+  const resolvedRuntimeName = runtimeName ?? `${threadedName}-screen`;
+
+  useEffect(() => {
+    if (preload) {
+      void ThreadedRuntime.preload(resolvedRuntimeName);
+    }
+
+    return () => {
+      if (destroyOnUnmount) {
+        void ThreadedRuntime.destroy(resolvedRuntimeName);
+      }
+    };
+  }, [destroyOnUnmount, preload, resolvedRuntimeName]);
+
+  return (
+    <Threaded
+      accessibilityLabel={accessibilityLabel}
+      component={component}
+      props={props}
+      runtimeName={resolvedRuntimeName}
+      style={[THREADED_SCREEN_STYLE, style]}
+      surfaceKey={surfaceKey ?? resolvedRuntimeName}
       testID={testID}
     />
   );
