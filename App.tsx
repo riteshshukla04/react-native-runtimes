@@ -1,4 +1,12 @@
-import {useEffect, useMemo, useRef, useState} from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactElement,
+  type RefObject,
+} from 'react';
 import {
   FlatList,
   type LayoutChangeEvent,
@@ -12,6 +20,8 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import {FlashList, type FlashListRef} from '@shopify/flash-list';
+import {LegendList, type LegendListRef} from '@legendapp/list';
 import {EaseView} from 'react-native-ease';
 import {
   SafeAreaProvider,
@@ -32,7 +42,8 @@ import VersionedComposeChatList, {
 } from './src/native/VersionedComposeChatList';
 
 type NativeBenchmarkMode = 'main' | 'background';
-type BenchmarkMode = NativeBenchmarkMode | 'animated';
+type RnBenchmarkMode = 'animated' | 'flashlist' | 'legendlist';
+type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -113,6 +124,18 @@ function AppContent() {
           label="RN FlatList"
           onPress={() => setMode('animated')}
         />
+        <TabButton
+          active={mode === 'flashlist'}
+          id="tab-flashlist"
+          label="FlashList"
+          onPress={() => setMode('flashlist')}
+        />
+        <TabButton
+          active={mode === 'legendlist'}
+          id="tab-legendlist"
+          label="LegendList"
+          onPress={() => setMode('legendlist')}
+        />
         <View
           accessibilityLabel="block-js-control"
           style={styles.blockSwitch}
@@ -129,8 +152,8 @@ function AppContent() {
           />
         </View>
       </View>
-      {mode === 'animated' ? (
-        <EaseChatBenchmarkScreen key={mode} blockStatus={blockStatus} />
+      {isRnBenchmarkMode(mode) ? (
+        <RnListBenchmarkScreen key={mode} blockStatus={blockStatus} mode={mode} />
       ) : (
         <ChatBenchmarkScreen
           key={mode}
@@ -141,6 +164,10 @@ function AppContent() {
       )}
     </View>
   );
+}
+
+function isRnBenchmarkMode(mode: BenchmarkMode): mode is RnBenchmarkMode {
+  return mode === 'animated' || mode === 'flashlist' || mode === 'legendlist';
 }
 
 function ChatBenchmarkScreen({
@@ -342,8 +369,16 @@ function renderFabricChatItem(
   return <ChatBubble item={item} onReaction={onReaction} />;
 }
 
-function EaseChatBenchmarkScreen({blockStatus}: {blockStatus: string}) {
-  const listRef = useRef<FlatList<number> | null>(null);
+function RnListBenchmarkScreen({
+  blockStatus,
+  mode,
+}: {
+  blockStatus: string;
+  mode: RnBenchmarkMode;
+}) {
+  const listRef = useRef<
+    FlatList<number> | FlashListRef<number> | LegendListRef | null
+  >(null);
   const sourceRef = useRef<VersionedChatDataSource | null>(null);
   const nextIdRef = useRef(10_000);
 
@@ -379,7 +414,7 @@ function EaseChatBenchmarkScreen({blockStatus}: {blockStatus: string}) {
     const id = `new-${nextIdRef.current++}`;
     source.addAtIndex(0, createRandomMessage(id, nextIdRef.current));
     publishState();
-    listRef.current?.scrollToOffset({offset: 0, animated: false});
+    scrollRnListToOffset(listRef.current, 0);
   }
 
   function prependThousandMessages() {
@@ -410,10 +445,10 @@ function EaseChatBenchmarkScreen({blockStatus}: {blockStatus: string}) {
   }
 
   function scrollToBenchmarkItem() {
-    listRef.current?.scrollToIndex({index: 7500, animated: false});
+    scrollRnListToIndex(listRef.current, 7500);
   }
 
-  const renderItem: ListRenderItem<number> = ({item: index}) => {
+  const renderItem = ({item: index}: {item: number; index: number}) => {
     const renderedItem = source.renderItem(index);
     if (!renderedItem) {
       return null;
@@ -442,61 +477,48 @@ function EaseChatBenchmarkScreen({blockStatus}: {blockStatus: string}) {
     <>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>RN FlatList + react-native-ease</Text>
+          <Text style={styles.title}>{titleForRnMode(mode)}</Text>
           <Text style={styles.subtitle}>
             {stats} / React Native owns scrolling
           </Text>
         </View>
         <View style={styles.actions}>
-          <ActionButton id="action-rn-ease-add-message" label="+" onPress={addMessage} />
+          <ActionButton id={`action-${mode}-add-message`} label="+" onPress={addMessage} />
           <ActionButton
-            id="action-rn-ease-prepend-1000"
+            id={`action-${mode}-prepend-1000`}
             label="1k+"
             onPress={prependThousandMessages}
           />
           <ActionButton
-            id="action-rn-ease-edit-message"
+            id={`action-${mode}-edit-message`}
             label="Edit"
             onPress={editLatest}
           />
           <ActionButton
-            id="action-rn-ease-react-latest"
+            id={`action-${mode}-react-latest`}
             label="+1"
             onPress={reactToLatest}
           />
           <ActionButton
-            id="action-rn-ease-delete-message"
+            id={`action-${mode}-delete-message`}
             label="Del"
             onPress={removeLatest}
           />
           <ActionButton
-            id="action-rn-ease-scroll-to-7500"
+            id={`action-${mode}-scroll-to-7500`}
             label="7500"
             onPress={scrollToBenchmarkItem}
           />
         </View>
       </View>
-      <FlatList
-        ref={listRef}
-        accessibilityLabel="rn-ease-chat-list"
-        contentContainerStyle={styles.rnEaseContent}
-        data={indices}
-        extraData={dataVersion}
-        initialNumToRender={10}
-        keyExtractor={index => source.renderItem(index)?.id ?? String(index)}
-        maxToRenderPerBatch={10}
-        onScrollToIndexFailed={({index}) => {
-          requestAnimationFrame(() => {
-            listRef.current?.scrollToIndex({index, animated: false});
-          });
-        }}
-        removeClippedSubviews={Platform.OS === 'android'}
-        renderItem={renderItem}
-        style={styles.list}
-        testID="rn-ease-chat-list"
-        updateCellsBatchingPeriod={16}
-        windowSize={7}
-      />
+      {renderRnList({
+        dataVersion,
+        indices,
+        listRef,
+        mode,
+        renderItem,
+        source,
+      })}
       <View
         accessibilityLabel={spacingStatus}
         style={styles.layoutProbe}
@@ -504,6 +526,110 @@ function EaseChatBenchmarkScreen({blockStatus}: {blockStatus: string}) {
       />
     </>
   );
+}
+
+function renderRnList({
+  dataVersion,
+  indices,
+  listRef,
+  mode,
+  renderItem,
+  source,
+}: {
+  dataVersion: number;
+  indices: number[];
+  listRef: MutableRefObject<
+    FlatList<number> | FlashListRef<number> | LegendListRef | null
+  >;
+  mode: RnBenchmarkMode;
+  renderItem: (info: {item: number; index: number}) => ReactElement | null;
+  source: VersionedChatDataSource;
+}) {
+  const keyExtractor = (index: number) => source.renderItem(index)?.id ?? String(index);
+  const testID = `${mode}-chat-list`;
+  const commonProps = {
+    accessibilityLabel: testID,
+    contentContainerStyle: styles.rnEaseContent,
+    data: indices,
+    extraData: dataVersion,
+    keyExtractor,
+    style: styles.list,
+    testID,
+  };
+
+  if (mode === 'flashlist') {
+    return (
+      <FlashList
+        {...commonProps}
+        ref={listRef as RefObject<FlashListRef<number>>}
+        drawDistance={1200}
+        renderItem={renderItem}
+      />
+    );
+  }
+
+  if (mode === 'legendlist') {
+    return (
+      <LegendList
+        {...commonProps}
+        ref={listRef as RefObject<LegendListRef>}
+        drawDistance={1200}
+        estimatedItemSize={148}
+        renderItem={renderItem}
+        recycleItems
+      />
+    );
+  }
+
+  return (
+    <FlatList
+      {...commonProps}
+      ref={listRef as RefObject<FlatList<number>>}
+      initialNumToRender={10}
+      maxToRenderPerBatch={10}
+      onScrollToIndexFailed={({index}) => {
+        requestAnimationFrame(() => {
+          scrollRnListToIndex(listRef.current, index);
+        });
+      }}
+      removeClippedSubviews={Platform.OS === 'android'}
+      renderItem={renderItem as ListRenderItem<number>}
+      updateCellsBatchingPeriod={16}
+      windowSize={7}
+    />
+  );
+}
+
+function titleForRnMode(mode: RnBenchmarkMode) {
+  switch (mode) {
+    case 'flashlist':
+      return 'RN FlashList + react-native-ease';
+    case 'legendlist':
+      return 'RN LegendList + react-native-ease';
+    default:
+      return 'RN FlatList + react-native-ease';
+  }
+}
+
+function scrollRnListToIndex(
+  list: FlatList<number> | FlashListRef<number> | LegendListRef | null,
+  index: number,
+) {
+  if (!list) return;
+  list.scrollToIndex({index, animated: false});
+}
+
+function scrollRnListToOffset(
+  list: FlatList<number> | FlashListRef<number> | LegendListRef | null,
+  offset: number,
+) {
+  if (!list) return;
+  const unsafeList = list as any;
+  if (typeof unsafeList.scrollToOffset === 'function') {
+    unsafeList.scrollToOffset({offset, animated: false});
+  } else {
+    unsafeList.scrollToIndex({index: 0, animated: false});
+  }
 }
 
 function EasedChatBubble({
