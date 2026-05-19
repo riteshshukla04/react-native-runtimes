@@ -1,4 +1,5 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const {withThreadedRuntime} = require('@native-compose/threaded-runtime/metro');
 
 /**
  * Metro configuration
@@ -8,4 +9,9 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  */
 const config = {};
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = withThreadedRuntime(
+  mergeConfig(getDefaultConfig(__dirname), config),
+  {
+    roots: ['App.tsx'],
+  },
+);

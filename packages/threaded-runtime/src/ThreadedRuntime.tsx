@@ -10,7 +10,15 @@ import NativeThreadedRuntimeSurface from './NativeThreadedRuntimeSurface';
 const DEFAULT_RUNTIME_NAME = 'background-list';
 const DEFAULT_HOST_APP_NAME = 'ThreadedRuntimeHost';
 
-type ThreadedComponentRegistry = Map<string, ComponentType<any>>;
+export type ThreadedComponent<Props extends object = Record<string, never>> =
+  ComponentType<Props> & {
+    __threadedRuntime: {
+      name: string;
+    };
+  };
+
+type ThreadedComponentLoader = () => ComponentType<any>;
+type ThreadedComponentRegistry = Map<string, ThreadedComponentLoader>;
 
 const threadedComponents: ThreadedComponentRegistry = new Map();
 
@@ -22,9 +30,21 @@ type ThreadedRuntimeNativeModule = {
 };
 
 const nativeRuntime = (NativeModules.ThreadedRuntime ??
-  NativeModules.BackgroundListBridge) as ThreadedRuntimeNativeModule | undefined;
+  NativeModules.BackgroundListBridge) as
+  | ThreadedRuntimeNativeModule
+  | undefined;
 
 export type ThreadedRuntimeName = string;
+
+export type ThreadedProps<Props extends object = Record<string, never>> = {
+  accessibilityLabel?: string;
+  component: ThreadedComponent<Props>;
+  props?: Props;
+  runtimeName?: ThreadedRuntimeName;
+  style?: StyleProp<ViewStyle>;
+  surfaceKey?: string;
+  testID?: string;
+};
 
 export type ThreadedReactSurfaceProps<
   Props extends object = Record<string, never>,
@@ -42,7 +62,47 @@ export function registerThreadedComponent<Props extends object>(
   name: string,
   component: ComponentType<Props>,
 ) {
-  threadedComponents.set(name, component as ComponentType<any>);
+  threadedComponents.set(name, () => component as ComponentType<any>);
+}
+
+export function registerLazyThreadedComponent<Props extends object>(
+  name: string,
+  loadComponent: () => ComponentType<Props>,
+) {
+  threadedComponents.set(name, loadComponent as ThreadedComponentLoader);
+}
+
+export function threadedComponent<Props extends object>(
+  name: string,
+  component: ComponentType<Props>,
+): ThreadedComponent<Props> {
+  return Object.assign(component, {
+    __threadedRuntime: {
+      name,
+    },
+  });
+}
+
+export function Threaded<Props extends object>({
+  accessibilityLabel,
+  component,
+  props,
+  runtimeName,
+  style,
+  surfaceKey,
+  testID,
+}: ThreadedProps<Props>) {
+  return (
+    <ThreadedReactSurface
+      accessibilityLabel={accessibilityLabel}
+      componentName={component.__threadedRuntime.name}
+      initialProps={props}
+      runtimeName={runtimeName}
+      style={style}
+      surfaceKey={surfaceKey}
+      testID={testID}
+    />
+  );
 }
 
 export function ThreadedReactSurface<Props extends object>({
@@ -87,7 +147,8 @@ export function ThreadedRuntimeHost({
     return null;
   }
 
-  const Component = threadedComponents.get(componentName);
+  const loadComponent = threadedComponents.get(componentName);
+  const Component = loadComponent?.();
   if (!Component) {
     console.warn(`No threaded component registered for "${componentName}"`);
     return null;
@@ -123,6 +184,8 @@ export const ThreadedRuntime = {
 
   getRuntimeNames() {
     if (Platform.OS !== 'android') return Promise.resolve([] as string[]);
-    return nativeRuntime?.getRuntimeNames?.() ?? Promise.resolve([] as string[]);
+    return (
+      nativeRuntime?.getRuntimeNames?.() ?? Promise.resolve([] as string[])
+    );
   },
 };

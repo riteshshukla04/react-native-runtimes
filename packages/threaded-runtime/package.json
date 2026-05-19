@@ -5,6 +5,20 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "react-native": "src/index.ts",
+  "files": [
+    "android",
+    "metro.d.ts",
+    "metro.js",
+    "README.md",
+    "src"
+  ],
+  "typesVersions": {
+    "*": {
+      "metro": [
+        "metro.d.ts"
+      ]
+    }
+  },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"

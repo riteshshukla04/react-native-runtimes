@@ -41,22 +41,17 @@ import type {
 import VersionedComposeChatList, {
   type VersionedComposeChatListRef,
 } from './src/native/VersionedComposeChatList';
-import {
-  registerThreadedComponent,
-  ThreadedReactSurface,
-} from '@native-compose/threaded-runtime';
+import {threadedComponent, Threaded} from '@native-compose/threaded-runtime';
 
 type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
-type RnBenchmarkMode = 'animated' | 'legendlist-main' | SecondRuntimeRnBenchmarkMode;
+type RnBenchmarkMode =
+  | 'animated'
+  | 'legendlist-main'
+  | SecondRuntimeRnBenchmarkMode;
 type SharedRuntimeMode = 'shared-tree' | 'poke-shared';
 type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
-type SharedTreeNodeId =
-  | 'root'
-  | 'left'
-  | 'right'
-  | 'leftLeaf'
-  | 'rightLeaf';
+type SharedTreeNodeId = 'root' | 'left' | 'right' | 'leftLeaf' | 'rightLeaf';
 type SharedTreeState = {
   nodes: Record<SharedTreeNodeId, string>;
   interaction: {
@@ -312,7 +307,11 @@ function AppContent() {
       ) : mode === 'poke-shared' ? (
         <PokemonRuntimeScreen />
       ) : mode === 'animated' || mode === 'legendlist-main' ? (
-        <RnListBenchmarkScreen key={mode} blockStatus={blockStatus} mode={mode} />
+        <RnListBenchmarkScreen
+          key={mode}
+          blockStatus={blockStatus}
+          mode={mode}
+        />
       ) : mode === 'flashlist' || mode === 'legendlist' ? (
         <SecondRuntimeRnListSurface
           key={mode}
@@ -339,10 +338,10 @@ function SecondRuntimeRnListSurface({
   mode: SecondRuntimeRnBenchmarkMode;
 }) {
   return (
-    <ThreadedReactSurface
+    <Threaded
       accessibilityLabel={`second-runtime-${mode}`}
-      componentName="BenchmarkRnList"
-      initialProps={{
+      component={SecondRuntimeRnListApp}
+      props={{
         blockStatus: 'second-runtime',
         mode,
       }}
@@ -353,26 +352,30 @@ function SecondRuntimeRnListSurface({
   );
 }
 
-export function SecondRuntimeRnListApp({
-  blockStatus = 'second-runtime',
-  mode = 'flashlist',
-  runtimeName,
-}: {
+type SecondRuntimeRnListAppProps = {
   blockStatus?: string;
   mode?: string;
   runtimeName?: string;
-}) {
-  const normalizedMode: SecondRuntimeRnBenchmarkMode =
-    mode === 'legendlist' ? 'legendlist' : 'flashlist';
-  return (
-    <RnListBenchmarkScreen
-      blockStatus={`${blockStatus} / ${runtimeName ?? runtimeKind()}`}
-      mode={normalizedMode}
-    />
-  );
-}
+};
 
-registerThreadedComponent('BenchmarkRnList', SecondRuntimeRnListApp);
+export const SecondRuntimeRnListApp =
+  threadedComponent<SecondRuntimeRnListAppProps>(
+    'BenchmarkRnList',
+    function SecondRuntimeRnListApp({
+      blockStatus = 'second-runtime',
+      mode = 'flashlist',
+      runtimeName,
+    }: SecondRuntimeRnListAppProps) {
+      const normalizedMode: SecondRuntimeRnBenchmarkMode =
+        mode === 'legendlist' ? 'legendlist' : 'flashlist';
+      return (
+        <RnListBenchmarkScreen
+          blockStatus={`${blockStatus} / ${runtimeName ?? runtimeKind()}`}
+          mode={normalizedMode}
+        />
+      );
+    },
+  );
 
 function SharedTreeRuntimeScreen() {
   return (
@@ -391,10 +394,10 @@ function SharedTreeRuntimeScreen() {
           <SharedTreePanel runtimeLabel="main RN" />
         </View>
         <View style={styles.sharedTreeDivider} />
-        <ThreadedReactSurface
+        <Threaded
           accessibilityLabel="shared-tree-threaded-panel"
-          componentName="SharedTreePanel"
-          initialProps={{interactive: false, runtimeLabel: 'threaded RN'}}
+          component={SharedTreeThreadedApp}
+          props={{interactive: false, runtimeLabel: 'threaded RN'}}
           runtimeName="shared-tree-runtime"
           style={styles.sharedTreePanel}
           surfaceKey="shared-tree-threaded-panel"
@@ -484,24 +487,28 @@ function SharedTreePanel({
   );
 }
 
-export function SharedTreeThreadedApp({
-  interactive = false,
-  runtimeLabel = 'threaded RN',
-  runtimeName,
-}: {
+type SharedTreeThreadedAppProps = {
   interactive?: boolean;
   runtimeLabel?: string;
   runtimeName?: string;
-}) {
-  return (
-    <SharedTreePanel
-      interactive={interactive}
-      runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
-    />
-  );
-}
+};
 
-registerThreadedComponent('SharedTreePanel', SharedTreeThreadedApp);
+export const SharedTreeThreadedApp =
+  threadedComponent<SharedTreeThreadedAppProps>(
+    'SharedTreePanel',
+    function SharedTreeThreadedApp({
+      interactive = false,
+      runtimeLabel = 'threaded RN',
+      runtimeName,
+    }: SharedTreeThreadedAppProps) {
+      return (
+        <SharedTreePanel
+          interactive={interactive}
+          runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
+        />
+      );
+    },
+  );
 
 function PokemonRuntimeScreen() {
   return (
@@ -520,10 +527,10 @@ function PokemonRuntimeScreen() {
           <PokemonProducerPanel />
         </View>
         <View style={styles.sharedTreeDivider} />
-        <ThreadedReactSurface
+        <Threaded
           accessibilityLabel="pokemon-threaded-consumer"
-          componentName="PokemonConsumerPanel"
-          initialProps={{runtimeLabel: 'threaded RN'}}
+          component={PokemonThreadedApp}
+          props={{runtimeLabel: 'threaded RN'}}
           runtimeName="pokemon-runtime"
           style={styles.pokemonConsumerSurface}
           surfaceKey="pokemon-threaded-consumer"
@@ -690,11 +697,7 @@ function PokemonProducerPanel() {
   );
 }
 
-function PokemonConsumerPanel({
-  runtimeLabel,
-}: {
-  runtimeLabel: string;
-}) {
+function PokemonConsumerPanel({runtimeLabel}: {runtimeLabel: string}) {
   const catalog = pokemonStore.useStore(state => state.catalog, ['catalog']);
   const canRequestMoreAfterScrollRef = useRef(false);
   const lastRequestedItemCountRef = useRef(-1);
@@ -766,21 +769,24 @@ function PokemonConsumerPanel({
   );
 }
 
-export function PokemonThreadedApp({
-  runtimeLabel = 'threaded RN',
-  runtimeName,
-}: {
+type PokemonThreadedAppProps = {
   runtimeLabel?: string;
   runtimeName?: string;
-}) {
-  return (
-    <PokemonConsumerPanel
-      runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
-    />
-  );
-}
+};
 
-registerThreadedComponent('PokemonConsumerPanel', PokemonThreadedApp);
+export const PokemonThreadedApp = threadedComponent<PokemonThreadedAppProps>(
+  'PokemonConsumerPanel',
+  function PokemonThreadedApp({
+    runtimeLabel = 'threaded RN',
+    runtimeName,
+  }: PokemonThreadedAppProps) {
+    return (
+      <PokemonConsumerPanel
+        runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
+      />
+    );
+  },
+);
 
 function ChatBenchmarkScreen({
   mode,
@@ -796,13 +802,17 @@ function ChatBenchmarkScreen({
   const nextIdRef = useRef(10_000);
 
   if (sourceRef.current == null) {
-    sourceRef.current = new VersionedChatDataSource(createRandomMessages(10_000));
+    sourceRef.current = new VersionedChatDataSource(
+      createRandomMessages(10_000),
+    );
   }
 
   const source = sourceRef.current;
   const [dataRevision, setDataRevision] = useState(0);
 
-  const stats = `${source.count.toLocaleString()} messages / v${source.version} / ${blockStatus}`;
+  const stats = `${source.count.toLocaleString()} messages / v${
+    source.version
+  } / ${blockStatus}`;
   const placeholderSpec = useMemo<ComposeChatListPlaceholderSpec>(
     () => ({
       version: 1,
@@ -861,7 +871,9 @@ function ChatBenchmarkScreen({
 
   function editLatest() {
     source.updateItem(0, {
-      body: `Edited at version ${source.version + 1}. This row was invalidated by index and filled again after native requested it.`,
+      body: `Edited at version ${
+        source.version + 1
+      }. This row was invalidated by index and filled again after native requested it.`,
     });
     publishState();
   }
@@ -919,15 +931,31 @@ function ChatBenchmarkScreen({
           </Text>
         </View>
         <View style={styles.actions}>
-          <ActionButton id="action-add-message" label="+" onPress={addMessage} />
+          <ActionButton
+            id="action-add-message"
+            label="+"
+            onPress={addMessage}
+          />
           <ActionButton
             id="action-prepend-1000"
             label="1k+"
             onPress={prependThousandMessages}
           />
-          <ActionButton id="action-edit-message" label="Edit" onPress={editLatest} />
-          <ActionButton id="action-react-latest" label="+1" onPress={reactToLatest} />
-          <ActionButton id="action-delete-message" label="Del" onPress={removeLatest} />
+          <ActionButton
+            id="action-edit-message"
+            label="Edit"
+            onPress={editLatest}
+          />
+          <ActionButton
+            id="action-react-latest"
+            label="+1"
+            onPress={reactToLatest}
+          />
+          <ActionButton
+            id="action-delete-message"
+            label="Del"
+            onPress={removeLatest}
+          />
           <ActionButton
             id="action-swap-first-ten-pairs"
             label="Swap"
@@ -938,7 +966,11 @@ function ChatBenchmarkScreen({
             label="7500"
             onPress={scrollToBenchmarkItem}
           />
-          <ActionButton id="action-scroll-to-8" label="8" onPress={scrollToSwapTail} />
+          <ActionButton
+            id="action-scroll-to-8"
+            label="8"
+            onPress={scrollToSwapTail}
+          />
           <ActionButton
             id="action-reset-item-0"
             label="R0"
@@ -995,7 +1027,9 @@ function RnListBenchmarkScreen({
   const nextIdRef = useRef(10_000);
 
   if (sourceRef.current == null) {
-    sourceRef.current = new VersionedChatDataSource(createRandomMessages(10_000));
+    sourceRef.current = new VersionedChatDataSource(
+      createRandomMessages(10_000),
+    );
   }
 
   useEffect(() => {
@@ -1045,7 +1079,9 @@ function RnListBenchmarkScreen({
 
   function editLatest() {
     source.updateItem(0, {
-      body: `Edited at version ${source.version + 1}. This row was rendered by the pure RN easing benchmark.`,
+      body: `Edited at version ${
+        source.version + 1
+      }. This row was rendered by the pure RN easing benchmark.`,
     });
     publishState();
   }
@@ -1099,7 +1135,11 @@ function RnListBenchmarkScreen({
           </Text>
         </View>
         <View style={styles.actions}>
-          <ActionButton id={`action-${mode}-add-message`} label="+" onPress={addMessage} />
+          <ActionButton
+            id={`action-${mode}-add-message`}
+            label="+"
+            onPress={addMessage}
+          />
           <ActionButton
             id={`action-${mode}-prepend-1000`}
             label="1k+"
@@ -1161,7 +1201,8 @@ function renderRnList({
   renderItem: (info: {item: number; index: number}) => ReactElement | null;
   source: VersionedChatDataSource;
 }) {
-  const keyExtractor = (index: number) => source.renderItem(index)?.id ?? String(index);
+  const keyExtractor = (index: number) =>
+    source.renderItem(index)?.id ?? String(index);
   const testID = `${mode}-chat-list`;
   const commonProps = {
     accessibilityLabel: testID,
@@ -1272,10 +1313,7 @@ function EasedChatBubble({
       animate={{opacity: 1, translateY: 0, scale: 1}}
       collapsable={false}
       initialAnimate={{opacity: 0, translateY: 16, scale: 0.96}}
-      style={[
-        styles.rnEaseRow,
-        item.isOwn && styles.rnEaseRowOwn,
-      ]}
+      style={[styles.rnEaseRow, item.isOwn && styles.rnEaseRowOwn]}
       onLayout={onLayout}
       transition={{
         opacity: {type: 'timing', duration: 160, easing: 'easeOut'},
@@ -1359,7 +1397,9 @@ function TabButton({
       onPress={onPress}
       style={[styles.tabButton, active && styles.tabButtonActive]}
       testID={id}>
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+      <Text style={[styles.tabText, active && styles.tabTextActive]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
