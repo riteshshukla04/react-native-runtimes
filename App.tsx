@@ -23,6 +23,7 @@ import {
 import {FlashList, type FlashListRef} from '@shopify/flash-list';
 import {LegendList, type LegendListRef} from '@legendapp/list';
 import {EaseView} from 'react-native-ease';
+import {createSharedStore} from '@native-compose/threaded-zustand';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -48,7 +49,55 @@ import {
 type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
 type RnBenchmarkMode = 'animated' | 'legendlist-main' | SecondRuntimeRnBenchmarkMode;
-type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode;
+type SharedRuntimeMode = 'shared-tree';
+type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
+type SharedTreeNodeId =
+  | 'root'
+  | 'left'
+  | 'right'
+  | 'leftLeaf'
+  | 'rightLeaf';
+type SharedTreeState = {
+  nodes: Record<SharedTreeNodeId, string>;
+  interaction: {
+    lastNode: SharedTreeNodeId;
+    lastRuntime: string;
+    presses: number;
+  };
+};
+
+const TREE_COLORS = ['#0F766E', '#7C3AED', '#DC2626', '#2563EB', '#EA580C'];
+const TREE_NODES: Array<{
+  id: SharedTreeNodeId;
+  label: string;
+  level: number;
+  children?: SharedTreeNodeId[];
+}> = [
+  {id: 'root', label: 'Root', level: 0, children: ['left', 'right']},
+  {id: 'left', label: 'Left', level: 1, children: ['leftLeaf']},
+  {id: 'right', label: 'Right', level: 1, children: ['rightLeaf']},
+  {id: 'leftLeaf', label: 'Left Leaf', level: 2},
+  {id: 'rightLeaf', label: 'Right Leaf', level: 2},
+];
+
+const sharedTreeStore = createSharedStore<SharedTreeState>({
+  name: 'threaded-tree-demo',
+  initialState: {
+    nodes: {
+      root: TREE_COLORS[0],
+      left: TREE_COLORS[1],
+      right: TREE_COLORS[2],
+      leftLeaf: TREE_COLORS[3],
+      rightLeaf: TREE_COLORS[4],
+    },
+    interaction: {
+      lastNode: 'root',
+      lastRuntime: 'initial',
+      presses: 0,
+    },
+  },
+  subtrees: ['nodes', 'interaction'],
+});
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -147,6 +196,12 @@ function AppContent() {
           label="Legend Main"
           onPress={() => setMode('legendlist-main')}
         />
+        <TabButton
+          active={mode === 'shared-tree'}
+          id="tab-shared-tree"
+          label="Shared Tree"
+          onPress={() => setMode('shared-tree')}
+        />
         <View
           accessibilityLabel="block-js-control"
           style={styles.blockSwitch}
@@ -163,7 +218,9 @@ function AppContent() {
           />
         </View>
       </View>
-      {mode === 'animated' || mode === 'legendlist-main' ? (
+      {mode === 'shared-tree' ? (
+        <SharedTreeRuntimeScreen />
+      ) : mode === 'animated' || mode === 'legendlist-main' ? (
         <RnListBenchmarkScreen key={mode} blockStatus={blockStatus} mode={mode} />
       ) : mode === 'flashlist' || mode === 'legendlist' ? (
         <SecondRuntimeRnListSurface
@@ -225,6 +282,135 @@ export function SecondRuntimeRnListApp({
 }
 
 registerThreadedComponent('BenchmarkRnList', SecondRuntimeRnListApp);
+
+function SharedTreeRuntimeScreen() {
+  return (
+    <View style={styles.sharedTreeScreen}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Shared state across RN runtimes</Text>
+        <Text style={styles.subtitle}>
+          Top half is main RN. Bottom half is rendered by ThreadedReactSurface.
+        </Text>
+      </View>
+      <View style={styles.sharedTreePanels}>
+        <View
+          accessibilityLabel="shared-tree-main-panel"
+          style={styles.sharedTreePanel}
+          testID="shared-tree-main-panel">
+          <SharedTreePanel runtimeLabel="main RN" />
+        </View>
+        <View style={styles.sharedTreeDivider} />
+        <ThreadedReactSurface
+          accessibilityLabel="shared-tree-threaded-panel"
+          componentName="SharedTreePanel"
+          initialProps={{interactive: false, runtimeLabel: 'threaded RN'}}
+          runtimeName="shared-tree-runtime"
+          style={styles.sharedTreePanel}
+          surfaceKey="shared-tree-threaded-panel"
+          testID="shared-tree-threaded-panel"
+        />
+      </View>
+    </View>
+  );
+}
+
+function SharedTreePanel({
+  interactive = true,
+  runtimeLabel,
+}: {
+  interactive?: boolean;
+  runtimeLabel: string;
+}) {
+  const nodes = sharedTreeStore.useStore(state => state.nodes, ['nodes']);
+  const interaction = sharedTreeStore.useStore(
+    state => state.interaction,
+    ['interaction'],
+  );
+
+  async function pressNode(nodeId: SharedTreeNodeId) {
+    const currentColor = nodes[nodeId];
+    const currentIndex = TREE_COLORS.indexOf(currentColor);
+    const nextColor = TREE_COLORS[(currentIndex + 1) % TREE_COLORS.length];
+
+    await sharedTreeStore.setSubtreeState('nodes', {
+      ...nodes,
+      [nodeId]: nextColor,
+    });
+    await sharedTreeStore.setSubtreeState('interaction', {
+      lastNode: nodeId,
+      lastRuntime: runtimeLabel,
+      presses: interaction.presses + 1,
+    });
+  }
+
+  return (
+    <View style={styles.sharedTreePanelContent}>
+      <View style={styles.sharedTreePanelHeader}>
+        <Text style={styles.sharedTreeRuntime}>{runtimeLabel}</Text>
+        <Text style={styles.sharedTreeMeta}>
+          {interaction.presses} presses / last {interaction.lastNode} from{' '}
+          {interaction.lastRuntime}
+        </Text>
+      </View>
+      <View style={styles.sharedTreeCanvas}>
+        {TREE_NODES.map(node => {
+          const nodeStyle = [
+            styles.sharedTreeNode,
+            {backgroundColor: nodes[node.id], marginLeft: node.level * 28},
+          ];
+          const nodeContent = (
+            <>
+              <Text style={styles.sharedTreeNodeText}>{node.label}</Text>
+              <Text style={styles.sharedTreeNodeSubtext}>
+                {node.children?.join(' / ') ?? 'leaf'}
+              </Text>
+            </>
+          );
+
+          return interactive ? (
+            <Pressable
+              accessibilityLabel={`shared-tree-node-${runtimeLabel}-${node.id}`}
+              key={node.id}
+              onPress={() => {
+                void pressNode(node.id);
+              }}
+              style={nodeStyle}
+              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}>
+              {nodeContent}
+            </Pressable>
+          ) : (
+            <View
+              accessibilityLabel={`shared-tree-node-${runtimeLabel}-${node.id}`}
+              key={node.id}
+              style={nodeStyle}
+              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}>
+              {nodeContent}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+export function SharedTreeThreadedApp({
+  interactive = false,
+  runtimeLabel = 'threaded RN',
+  runtimeName,
+}: {
+  interactive?: boolean;
+  runtimeLabel?: string;
+  runtimeName?: string;
+}) {
+  return (
+    <SharedTreePanel
+      interactive={interactive}
+      runtimeLabel={`${runtimeLabel} / ${runtimeName ?? runtimeKind()}`}
+    />
+  );
+}
+
+registerThreadedComponent('SharedTreePanel', SharedTreeThreadedApp);
 
 function ChatBenchmarkScreen({
   mode,
@@ -918,6 +1104,68 @@ const styles = StyleSheet.create({
   },
   secondRuntimeSurface: {
     flex: 1,
+  },
+  sharedTreeScreen: {
+    flex: 1,
+  },
+  sharedTreePanels: {
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  sharedTreePanel: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  sharedTreeDivider: {
+    backgroundColor: '#9CA3AF',
+    height: StyleSheet.hairlineWidth,
+  },
+  sharedTreePanelContent: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  sharedTreePanelHeader: {
+    gap: 2,
+    marginBottom: 6,
+  },
+  sharedTreeRuntime: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  sharedTreeMeta: {
+    color: '#4B5563',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sharedTreeCanvas: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  sharedTreeNode: {
+    borderColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    shadowColor: '#111827',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+  },
+  sharedTreeNodeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  sharedTreeNodeSubtext: {
+    color: '#EEF2FF',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
   },
   layoutProbe: {
     height: 1,

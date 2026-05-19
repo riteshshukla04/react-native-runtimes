@@ -32,6 +32,7 @@
 #include <FBReactNativeSpec.h>
 #include <autolinking.h>
 #include "BackgroundListJsi.h"
+#include "SharedZustandStoreJni.h"
 #include <fbjni/fbjni.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 
@@ -117,6 +118,7 @@ std::shared_ptr<TurboModule> javaModuleProvider(
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     facebook::react::BackgroundListJsi::registerNatives();
+    facebook::react::SharedZustandStoreJni::registerNatives();
     facebook::react::DefaultTurboModuleManagerDelegate::cxxModuleProvider =
         &facebook::react::cxxModuleProvider;
     facebook::react::DefaultTurboModuleManagerDelegate::javaModuleProvider =

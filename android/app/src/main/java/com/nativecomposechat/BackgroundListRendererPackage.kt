@@ -8,7 +8,8 @@ import com.facebook.react.uimanager.ViewManager
 class BackgroundListRendererPackage : ReactPackage {
   override fun createNativeModules(
       reactContext: ReactApplicationContext
-  ): List<NativeModule> = listOf(BackgroundListBridgeModule(reactContext))
+  ): List<NativeModule> =
+      listOf(BackgroundListBridgeModule(reactContext), SharedZustandStoreModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext
