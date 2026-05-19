@@ -127,18 +127,21 @@ data class PlaceholderTemplate(
     val showFooter: Boolean,
 )
 
+@Immutable
 private data class VisibleItemLayout(
     val index: Int,
     val offset: Int,
     val size: Int,
 )
 
+@Immutable
 private data class VisibleListLayout(
     val viewportStart: Int,
     val viewportEnd: Int,
     val items: List<VisibleItemLayout>,
 )
 
+@Immutable
 private data class VisibleWindowSnapshot(
     val layout: VisibleListLayout,
     val firstIndex: Int,
@@ -146,6 +149,7 @@ private data class VisibleWindowSnapshot(
     val isScrolling: Boolean,
 )
 
+@Immutable
 private data class MessageLoadTelemetry(
     val requestedAtMs: Long,
     val version: Int,
@@ -155,6 +159,7 @@ private data class MessageLoadTelemetry(
     val windowKey: String,
 )
 
+@Immutable
 private data class PendingItemRequestDispatch(
     val missing: List<Int>,
     val activeIndices: List<Int>,
@@ -276,7 +281,10 @@ private class FabricCellHolder(context: Context) : FrameLayout(context) {
     val exactWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
     val exactHeight = MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY)
     for (index in 0 until childCount) {
-      getChildAt(index).measure(exactWidth, exactHeight)
+      val child = getChildAt(index)
+      if (child.isLayoutRequested || child.measuredWidth != width || child.measuredHeight != heightPx) {
+        child.measure(exactWidth, exactHeight)
+      }
     }
     setMeasuredDimension(width, heightPx)
 
@@ -1169,9 +1177,16 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             "contentType=${cell.contentType} measuredHeightDp=${measuredHeightDp ?: 0} " +
             "dataVersion=$dataVersion"
     val rowLogState = remember(index, expectedMountedCellId) { FabricRowLogState() }
+    val fixedHeightDp = measuredHeightDp?.takeIf { it > 0 } ?: cell.knownMeasuredContentHeightDp()
+    val rowModifier =
+        if (fixedHeightDp != null && fixedHeightDp > 0) {
+          Modifier.fillMaxWidth().height(fixedHeightDp.dp)
+        } else {
+          Modifier.fillMaxWidth()
+        }
     val androidViewModifier =
-        if (measuredHeightDp != null && measuredHeightDp > 0) {
-          Modifier.fillMaxWidth().height(measuredHeightDp.dp)
+        if (fixedHeightDp != null && fixedHeightDp > 0) {
+          Modifier.fillMaxSize()
         } else {
           Modifier.fillMaxWidth()
         }
@@ -1205,33 +1220,32 @@ class ComposeChatListView(context: Context) : FrameLayout(context) {
             .orEmpty()
     Box(
         modifier =
-            Modifier.fillMaxWidth()
-                .semantics {
-                  testTag = cell.itemId
-                  contentDescription =
-                      "chat-row-$index-v${cell.renderVersion} " +
-                          "chat-row-$index-item-${cell.itemId} " +
-                          "chat-row-$index-fabric-${cell.itemId}-v${cell.renderVersion} " +
-                          reactionDescriptions
-                },
+            rowModifier.semantics {
+              testTag = cell.itemId
+              contentDescription =
+                  "chat-row-$index-v${cell.renderVersion} " +
+                      "chat-row-$index-item-${cell.itemId} " +
+                      "chat-row-$index-fabric-${cell.itemId}-v${cell.renderVersion} " +
+                      reactionDescriptions
+            },
     ) {
       AndroidView(
           factory = { holderContext ->
             FabricCellHolder(holderContext).also { holder ->
               debugLog("holder factory data=[$debugDataKey] cell=${cell.debugLabel()}")
             }
-	          },
-	          modifier = androidViewModifier,
-	          update = { holder ->
-	            holder.preferredHeightDp = measuredHeightDp ?: 0
-	            holder.recordUpdate(debugDataKey, cell)
-	            attachFabricCellToHolder(holder, cell)
-	          },
-	          onRelease = { holder ->
-	            holder.recordReset("release")
-	            holder.removeAllViews()
-	          },
-	      )
+          },
+          modifier = androidViewModifier,
+          update = { holder ->
+            holder.preferredHeightDp = fixedHeightDp ?: 0
+            holder.recordUpdate(debugDataKey, cell)
+            attachFabricCellToHolder(holder, cell)
+          },
+          onRelease = { holder ->
+            holder.recordReset("release")
+            holder.removeAllViews()
+          },
+      )
     }
   }
 
