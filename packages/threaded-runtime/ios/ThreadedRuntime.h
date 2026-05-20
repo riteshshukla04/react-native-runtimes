@@ -11,6 +11,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)configureWithReactNativeDelegate:(id<RCTReactNativeFactoryDelegate>)delegate
                            launchOptions:(nullable NSDictionary *)launchOptions;
 + (void)prewarmRuntime:(nullable NSString *)runtimeName;
++ (void)prewarmRuntime:(nullable NSString *)runtimeName
+                  kind:(nullable NSString *)kind
+  useMainNativeModules:(BOOL)useMainNativeModules;
++ (void)prewarmBusinessRuntime:(nullable NSString *)runtimeName;
 + (void)dispatchHeadlessTaskWithRuntimeName:(nullable NSString *)runtimeName
                                    taskName:(NSString *)taskName
                                 payloadJson:(nullable NSString *)payloadJson;

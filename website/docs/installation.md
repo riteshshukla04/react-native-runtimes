@@ -80,6 +80,21 @@ ThreadedRuntime.prewarmRuntime(
 )
 ```
 
+If a long-lived background business runtime should use the same native modules
+as the main app runtime, provide the app package list and prewarm it as a
+business runtime:
+
+```kotlin
+import com.facebook.react.PackageList
+import com.nativecompose.threadedruntime.ThreadedRuntime
+
+ThreadedRuntime.setMainReactPackagesProvider {
+  PackageList(this).packages
+}
+
+ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "business-runtime")
+```
+
 ## Metro
 
 Wrap your Metro config so the package can generate the threaded entry file:

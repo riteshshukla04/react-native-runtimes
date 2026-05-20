@@ -10,7 +10,10 @@
 #import <react/runtime/JSRuntimeFactoryCAPI.h>
 
 static NSString *const ThreadedRuntimeDefaultRuntimeName = @"background-list";
+static NSString *const ThreadedRuntimeDefaultBusinessRuntimeName = @"business-runtime";
 static NSString *const ThreadedRuntimeDefaultHostAppName = @"ThreadedRuntimeHost";
+static NSString *const ThreadedRuntimeDefaultRuntimeKind = @"threaded-runtime";
+static NSString *const ThreadedRuntimeBusinessRuntimeKind = @"business-runtime";
 static NSString *const ThreadedRuntimeHeadlessTaskRunnerModule = @"ThreadedRuntimeHeadlessTaskRunner";
 
 @interface ThreadedRuntime (Private)
@@ -22,19 +25,32 @@ static NSString *const ThreadedRuntimeHeadlessTaskRunnerModule = @"ThreadedRunti
 @interface ThreadedRuntimeHostDelegate : NSObject <RCTHostDelegate>
 
 - (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate runtimeName:(NSString *)runtimeName;
+- (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate
+                      runtimeName:(NSString *)runtimeName
+                             kind:(NSString *)kind;
 
 @end
 
 @implementation ThreadedRuntimeHostDelegate {
   __weak id<RCTReactNativeFactoryDelegate> _delegate;
   NSString *_runtimeName;
+  NSString *_kind;
 }
 
 - (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate runtimeName:(NSString *)runtimeName
 {
+  return [self initWithDelegate:delegate runtimeName:runtimeName kind:ThreadedRuntimeDefaultRuntimeKind];
+}
+
+- (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate
+                      runtimeName:(NSString *)runtimeName
+                             kind:(NSString *)kind
+{
   if (self = [super init]) {
     _delegate = delegate;
     _runtimeName = [runtimeName copy];
+    NSString *resolvedKind = kind.length > 0 ? kind : ThreadedRuntimeDefaultRuntimeKind;
+    _kind = [resolvedKind copy];
   }
   return self;
 }
@@ -64,8 +80,10 @@ static NSString *const ThreadedRuntimeHeadlessTaskRunnerModule = @"ThreadedRunti
   global.setProperty(runtime, "_is_it_a_list_env", true);
 
   auto threadedEnv = facebook::jsi::Object(runtime);
-  threadedEnv.setProperty(runtime, "kind", facebook::jsi::String::createFromUtf8(runtime, "threaded-runtime"));
+  threadedEnv.setProperty(runtime, "kind", facebook::jsi::String::createFromUtf8(runtime, [_kind UTF8String]));
   threadedEnv.setProperty(runtime, "runtimeName", facebook::jsi::String::createFromUtf8(runtime, [_runtimeName UTF8String]));
+  threadedEnv.setProperty(runtime, "isBackgroundRuntime", ![_kind isEqualToString:ThreadedRuntimeDefaultRuntimeKind]);
+  threadedEnv.setProperty(runtime, "useMainNativeModules", true);
   threadedEnv.setProperty(runtime, "version", 1);
   global.setProperty(runtime, "__THREADED_RUNTIME_ENV__", threadedEnv);
 
@@ -180,6 +198,16 @@ static NSMutableDictionary<NSString *, ThreadedRuntimeTurboModuleDelegate *> *Th
   return delegates;
 }
 
+static NSMutableDictionary<NSString *, NSString *> *ThreadedRuntimeKinds()
+{
+  static NSMutableDictionary<NSString *, NSString *> *kinds;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    kinds = [NSMutableDictionary new];
+  });
+  return kinds;
+}
+
 static NSMutableDictionary<NSString *, NSMutableArray<NSDictionary<NSString *, NSString *> *> *> *ThreadedRuntimePendingHeadlessTasks()
 {
   static NSMutableDictionary<NSString *, NSMutableArray<NSDictionary<NSString *, NSString *> *> *> *tasks;
@@ -227,20 +255,39 @@ static NSDictionary *configuredLaunchOptions;
 
 + (void)prewarmRuntime:(NSString *)runtimeName
 {
+  [self prewarmRuntime:runtimeName kind:ThreadedRuntimeDefaultRuntimeKind useMainNativeModules:NO];
+}
+
++ (void)prewarmRuntime:(NSString *)runtimeName
+                  kind:(NSString *)kind
+  useMainNativeModules:(BOOL)useMainNativeModules
+{
   NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
+  NSString *normalizedKind = [self normalizeRuntimeKind:kind];
+  [self configureRuntimeKind:normalizedKind runtimeName:normalizedRuntimeName];
+  (void)useMainNativeModules;
   BOOL reused = ThreadedRuntimeHosts()[normalizedRuntimeName] != nil;
   RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
   [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
   NSLog(
-      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ reused=%@ active=%@",
+      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
       normalizedRuntimeName,
+      normalizedKind,
       reused ? @"true" : @"false",
       ThreadedRuntimeHosts().allKeys);
   RCTLogInfo(
-      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ reused=%@ active=%@",
+      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
       normalizedRuntimeName,
+      normalizedKind,
       reused ? @"true" : @"false",
       ThreadedRuntimeHosts().allKeys);
+}
+
++ (void)prewarmBusinessRuntime:(NSString *)runtimeName
+{
+  [self prewarmRuntime:runtimeName ?: ThreadedRuntimeDefaultBusinessRuntimeName
+                  kind:ThreadedRuntimeBusinessRuntimeKind
+  useMainNativeModules:YES];
 }
 
 + (void)dispatchHeadlessTaskWithRuntimeName:(NSString *)runtimeName
@@ -293,6 +340,7 @@ static NSDictionary *configuredLaunchOptions;
   [ThreadedRuntimeHosts() removeObjectForKey:normalizedRuntimeName];
   [ThreadedRuntimeHostDelegates() removeObjectForKey:normalizedRuntimeName];
   [ThreadedRuntimeTurboModuleDelegates() removeObjectForKey:normalizedRuntimeName];
+  [ThreadedRuntimeKinds() removeObjectForKey:normalizedRuntimeName];
   NSLog(@"[ThreadedRuntime] runtime destroy runtimeName=%@", normalizedRuntimeName);
   RCTLogInfo(@"[ThreadedRuntime] runtime destroy runtimeName=%@", normalizedRuntimeName);
 }
@@ -302,6 +350,7 @@ static NSDictionary *configuredLaunchOptions;
   [ThreadedRuntimeHosts() removeAllObjects];
   [ThreadedRuntimeHostDelegates() removeAllObjects];
   [ThreadedRuntimeTurboModuleDelegates() removeAllObjects];
+  [ThreadedRuntimeKinds() removeAllObjects];
   @synchronized(self) {
     [ThreadedRuntimePendingHeadlessTasks() removeAllObjects];
     [ThreadedRuntimeStartingRuntimeNames() removeAllObjects];
@@ -412,7 +461,9 @@ static NSDictionary *configuredLaunchOptions;
   }
 
   ThreadedRuntimeHostDelegate *hostDelegate =
-      [[ThreadedRuntimeHostDelegate alloc] initWithDelegate:delegate runtimeName:runtimeName];
+      [[ThreadedRuntimeHostDelegate alloc] initWithDelegate:delegate
+                                                runtimeName:runtimeName
+                                                       kind:[self runtimeKindForRuntimeName:runtimeName]];
   ThreadedRuntimeTurboModuleDelegate *turboModuleDelegate =
       [[ThreadedRuntimeTurboModuleDelegate alloc] initWithDelegate:delegate];
   __weak id<RCTReactNativeFactoryDelegate> weakDelegate = delegate;
@@ -440,6 +491,31 @@ static NSDictionary *configuredLaunchOptions;
   return runtimeName.length > 0 ? runtimeName : ThreadedRuntimeDefaultRuntimeName;
 }
 
++ (NSString *)normalizeRuntimeKind:(NSString *)kind
+{
+  return kind.length > 0 ? kind : ThreadedRuntimeDefaultRuntimeKind;
+}
+
++ (NSString *)runtimeKindForRuntimeName:(NSString *)runtimeName
+{
+  return ThreadedRuntimeKinds()[runtimeName] ?: ThreadedRuntimeDefaultRuntimeKind;
+}
+
++ (void)configureRuntimeKind:(NSString *)kind runtimeName:(NSString *)runtimeName
+{
+  RCTHost *existingHost = ThreadedRuntimeHosts()[runtimeName];
+  NSString *existingKind = ThreadedRuntimeKinds()[runtimeName];
+  if (existingHost != nil && existingKind.length > 0 && ![existingKind isEqualToString:kind]) {
+    RCTLogWarn(
+        @"[ThreadedRuntime] runtime kind ignored for already-created runtime runtimeName=%@ existing=%@ requested=%@",
+        runtimeName,
+        existingKind,
+        kind);
+    return;
+  }
+  ThreadedRuntimeKinds()[runtimeName] = kind;
+}
+
 RCT_EXPORT_METHOD(preloadRuntime
                   : (NSString *)runtimeName resolver
                   : (RCTPromiseResolveBlock)resolve rejecter
@@ -455,6 +531,21 @@ RCT_EXPORT_METHOD(prewarmRuntime
 {
   @try {
     [ThreadedRuntime prewarmRuntime:runtimeName];
+    resolve(nil);
+  } @catch (NSException *exception) {
+    reject(@"ERR_THREADED_RUNTIME_PREWARM", exception.reason, nil);
+  }
+}
+
+RCT_EXPORT_METHOD(prewarmRuntimeWithOptions
+                  : (NSString *)runtimeName kind
+                  : (NSString *)kind useMainNativeModules
+                  : (BOOL)useMainNativeModules resolver
+                  : (RCTPromiseResolveBlock)resolve rejecter
+                  : (RCTPromiseRejectBlock)reject)
+{
+  @try {
+    [ThreadedRuntime prewarmRuntime:runtimeName kind:kind useMainNativeModules:useMainNativeModules];
     resolve(nil);
   } @catch (NSException *exception) {
     reject(@"ERR_THREADED_RUNTIME_PREWARM", exception.reason, nil);

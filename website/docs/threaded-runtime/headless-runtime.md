@@ -5,6 +5,10 @@ title: Headless Background Runtime With Prewarm
 
 A headless task runs JS on a named threaded runtime without mounting any UI. Use it when a runtime should fetch, hydrate, decode, or update shared state before a screen opens.
 
+The same mechanism can also run heavier business logic away from the main JS
+runtime. See [Business Logic Executor](./business-logic-executor.md) for a
+crypto-style job queue example.
+
 Register a task in code loaded by the threaded bundle:
 
 ```tsx

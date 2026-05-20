@@ -13,7 +13,10 @@ import {
 import NativeThreadedRuntimeSurface from './NativeThreadedRuntimeSurface';
 
 const DEFAULT_RUNTIME_NAME = 'background-list';
+const DEFAULT_BUSINESS_RUNTIME_NAME = 'business-runtime';
 const DEFAULT_HOST_APP_NAME = 'ThreadedRuntimeHost';
+const DEFAULT_RUNTIME_KIND = 'threaded-runtime';
+const BUSINESS_RUNTIME_KIND = 'business-runtime';
 const THREADED_SCREEN_STYLE: ViewStyle = { flex: 1 };
 const HEADLESS_TASK_RUNNER_MODULE = 'ThreadedRuntimeHeadlessTaskRunner';
 
@@ -41,6 +44,11 @@ const threadedHeadlessTasks = new Map<string, ThreadedHeadlessTask<any>>();
 type ThreadedRuntimeNativeModule = {
   preloadRuntime?: (runtimeName: string) => Promise<void>;
   prewarmRuntime?: (runtimeName: string) => Promise<void>;
+  prewarmRuntimeWithOptions?: (
+    runtimeName: string,
+    kind: string,
+    useMainNativeModules: boolean,
+  ) => Promise<void>;
   runHeadlessTask?: (
     runtimeName: string,
     taskName: string,
@@ -62,6 +70,10 @@ const nativeRuntime = (NativeModules.ThreadedRuntime ??
   | undefined;
 
 export type ThreadedRuntimeName = string;
+export type ThreadedRuntimePrewarmOptions = {
+  kind?: string;
+  useMainNativeModules?: boolean;
+};
 export type ThreadedHeadlessTaskOptions<Payload = unknown> = {
   payload?: Payload;
   runtimeName?: ThreadedRuntimeName;
@@ -286,9 +298,19 @@ function runRegisteredHeadlessTask(
 
 function prewarmRuntime(
   runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME,
+  options: ThreadedRuntimePrewarmOptions = {},
 ) {
   if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
     return Promise.resolve();
+  }
+  const kind = options.kind ?? DEFAULT_RUNTIME_KIND;
+  const useMainNativeModules = options.useMainNativeModules ?? false;
+  if (nativeRuntime?.prewarmRuntimeWithOptions) {
+    return nativeRuntime.prewarmRuntimeWithOptions(
+      runtimeName,
+      kind,
+      useMainNativeModules,
+    );
   }
   return (
     nativeRuntime?.prewarmRuntime?.(runtimeName) ??
@@ -299,13 +321,29 @@ function prewarmRuntime(
 
 export const ThreadedRuntime = {
   defaultRuntimeName: DEFAULT_RUNTIME_NAME,
+  defaultBusinessRuntimeName: DEFAULT_BUSINESS_RUNTIME_NAME,
 
-  preload(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
-    return prewarmRuntime(runtimeName);
+  preload(
+    runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME,
+    options: ThreadedRuntimePrewarmOptions = {},
+  ) {
+    return prewarmRuntime(runtimeName, options);
   },
 
-  prewarm(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
-    return prewarmRuntime(runtimeName);
+  prewarm(
+    runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME,
+    options: ThreadedRuntimePrewarmOptions = {},
+  ) {
+    return prewarmRuntime(runtimeName, options);
+  },
+
+  prewarmBusinessRuntime(
+    runtimeName: ThreadedRuntimeName = DEFAULT_BUSINESS_RUNTIME_NAME,
+  ) {
+    return prewarmRuntime(runtimeName, {
+      kind: BUSINESS_RUNTIME_KIND,
+      useMainNativeModules: true,
+    });
   },
 
   runHeadlessTask<Payload = unknown>(

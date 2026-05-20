@@ -47,6 +47,51 @@ inline void dispatchHeadlessTask(
   env->DeleteLocalRef(runtimeNameValue);
   env->DeleteLocalRef(runtimeClass);
 }
+
+inline void prewarmRuntime(
+    JNIEnv *env,
+    jobject context,
+    const std::string &runtimeName,
+    const std::string &kind,
+    bool useMainNativeModules)
+{
+  jclass runtimeClass =
+      env->FindClass("com/nativecompose/threadedruntime/ThreadedRuntime");
+  if (runtimeClass == nullptr) {
+    return;
+  }
+
+  jmethodID prewarmMethod = env->GetStaticMethodID(
+      runtimeClass,
+      "prewarmRuntimeWithOptions",
+      "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Z)V");
+  if (prewarmMethod == nullptr) {
+    env->DeleteLocalRef(runtimeClass);
+    return;
+  }
+
+  jstring runtimeNameValue = env->NewStringUTF(runtimeName.c_str());
+  jstring kindValue = env->NewStringUTF(kind.c_str());
+  env->CallStaticVoidMethod(
+      runtimeClass,
+      prewarmMethod,
+      context,
+      runtimeNameValue,
+      kindValue,
+      static_cast<jboolean>(useMainNativeModules));
+
+  env->DeleteLocalRef(kindValue);
+  env->DeleteLocalRef(runtimeNameValue);
+  env->DeleteLocalRef(runtimeClass);
+}
+
+inline void prewarmBusinessRuntime(
+    JNIEnv *env,
+    jobject context,
+    const std::string &runtimeName)
+{
+  prewarmRuntime(env, context, runtimeName, "business-runtime", true);
+}
 #elif defined(__APPLE__)
 void dispatchHeadlessTask(
     const std::string &runtimeName,
@@ -54,6 +99,11 @@ void dispatchHeadlessTask(
     const std::string &payloadJson);
 
 void prewarmRuntime(const std::string &runtimeName);
+void prewarmRuntime(
+    const std::string &runtimeName,
+    const std::string &kind,
+    bool useMainNativeModules);
+void prewarmBusinessRuntime(const std::string &runtimeName);
 #endif
 
 } // namespace nativecompose::threadedruntime

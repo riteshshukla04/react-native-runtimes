@@ -28,7 +28,10 @@ import java.util.concurrent.TimeUnit
 
 object ThreadedRuntime {
   const val DEFAULT_RUNTIME_NAME = "background-list"
+  const val DEFAULT_BUSINESS_RUNTIME_NAME = "business-runtime"
   const val DEFAULT_HOST_APP_NAME = "ThreadedRuntimeHost"
+  const val DEFAULT_RUNTIME_KIND = "threaded-runtime"
+  const val BUSINESS_RUNTIME_KIND = "business-runtime"
   private const val HEADLESS_TASK_RUNNER_MODULE = "ThreadedRuntimeHeadlessTaskRunner"
   private const val LOG_TAG = "ThreadedRuntime"
 
@@ -37,8 +40,14 @@ object ThreadedRuntime {
       val payloadJson: String,
   )
 
+  internal data class RuntimeOptions(
+      val kind: String = DEFAULT_RUNTIME_KIND,
+      val useMainNativeModules: Boolean = false,
+  )
+
   private val lock = Any()
   private val hosts = mutableMapOf<String, ReactHost>()
+  private val runtimeOptions = mutableMapOf<String, RuntimeOptions>()
   private val pendingHeadlessTasks = mutableMapOf<String, MutableList<HeadlessTaskRequest>>()
   private val startingRuntimes = mutableSetOf<String>()
   private val startedRuntimes = mutableSetOf<String>()
@@ -47,6 +56,12 @@ object ThreadedRuntime {
         Thread(runnable, "ThreadedRuntimeDispatch").apply { isDaemon = true }
       }
   private var extraReactPackagesProvider: (() -> List<ReactPackage>)? = null
+  private var mainReactPackagesProvider: (() -> List<ReactPackage>)? = null
+
+  @JvmStatic
+  fun setMainReactPackagesProvider(provider: (() -> List<ReactPackage>)?) {
+    mainReactPackagesProvider = provider
+  }
 
   @JvmStatic
   fun setExtraReactPackagesProvider(provider: (() -> List<ReactPackage>)?) {
@@ -68,14 +83,51 @@ object ThreadedRuntime {
   @JvmOverloads
   @JvmStatic
   fun prewarmRuntime(context: Context, runtimeName: String = DEFAULT_RUNTIME_NAME) {
+    prewarmRuntimeWithOptions(
+        context,
+        runtimeName,
+        DEFAULT_RUNTIME_KIND,
+        useMainNativeModules = false,
+    )
+  }
+
+  @JvmStatic
+  fun prewarmRuntimeWithOptions(
+      context: Context,
+      runtimeName: String?,
+      kind: String?,
+      useMainNativeModules: Boolean,
+  ) {
     val normalizedRuntimeName = runtimeName.orDefaultRuntimeName()
+    val options =
+        RuntimeOptions(
+            kind = kind.orDefaultRuntimeKind(),
+            useMainNativeModules = useMainNativeModules,
+        )
+    configureRuntimeOptions(normalizedRuntimeName, options)
     val didReuseHost = synchronized(lock) { hosts.containsKey(normalizedRuntimeName) }
     val host = ensureHost(context.applicationContext, null, normalizedRuntimeName)
     startRuntimeAndFlush(normalizedRuntimeName, host)
     Log.i(
         LOG_TAG,
         "runtime prewarm runtimeName=$normalizedRuntimeName " +
+            "kind=${options.kind} useMainNativeModules=${options.useMainNativeModules} " +
             "reused=$didReuseHost active=${runtimeNames()}")
+  }
+
+  @JvmOverloads
+  @JvmStatic
+  fun prewarmBusinessRuntime(
+      context: Context,
+      runtimeName: String = DEFAULT_BUSINESS_RUNTIME_NAME,
+      useMainNativeModules: Boolean = true,
+  ) {
+    prewarmRuntimeWithOptions(
+        context,
+        runtimeName,
+        BUSINESS_RUNTIME_KIND,
+        useMainNativeModules,
+    )
   }
 
   fun destroyRuntime(runtimeName: String) {
@@ -85,6 +137,7 @@ object ThreadedRuntime {
           pendingHeadlessTasks.remove(normalizedRuntimeName)
           startingRuntimes.remove(normalizedRuntimeName)
           startedRuntimes.remove(normalizedRuntimeName)
+          runtimeOptions.remove(normalizedRuntimeName)
           hosts.remove(normalizedRuntimeName)
         }
     host?.destroy("destroyRuntime($normalizedRuntimeName)", null)
@@ -137,12 +190,13 @@ object ThreadedRuntime {
 
     val componentFactory = ComponentFactory()
     DefaultComponentsRegistry.register(componentFactory)
+    val options = runtimeOptionsFor(runtimeName)
 
     val delegate =
         DefaultReactHostDelegate(
             jsMainModulePath = "index",
-            jsBundleLoader = ThreadedRuntimeBundleLoader(context, runtimeName),
-            reactPackages = buildReactPackages(),
+            jsBundleLoader = ThreadedRuntimeBundleLoader(context, runtimeName, options),
+            reactPackages = buildReactPackages(options),
             jsRuntimeFactory = HermesInstance(),
             turboModuleManagerDelegateBuilder = DefaultTurboModuleManagerDelegate.Builder(),
             exceptionHandler = { throw it },
@@ -254,23 +308,60 @@ object ThreadedRuntime {
     }
   }
 
-  private fun buildReactPackages(): List<ReactPackage> =
-      buildList {
-        add(MainReactPackage())
-        add(ThreadedRuntimePackage())
-        addAll(extraReactPackagesProvider?.invoke().orEmpty())
+  private fun buildReactPackages(options: RuntimeOptions): List<ReactPackage> {
+    val packages = mutableListOf<ReactPackage>()
+    if (options.useMainNativeModules) {
+      val mainPackages = mainReactPackagesProvider?.invoke().orEmpty()
+      if (mainPackages.isEmpty()) {
+        Log.w(
+            LOG_TAG,
+            "useMainNativeModules=true but no main package provider was configured; " +
+                "falling back to the minimal threaded runtime package set")
+        packages.add(MainReactPackage())
+      } else {
+        packages.addAll(mainPackages)
       }
+    } else {
+      packages.add(MainReactPackage())
+    }
+
+    packages.add(ThreadedRuntimePackage())
+    packages.addAll(extraReactPackagesProvider?.invoke().orEmpty())
+    return packages.distinctBy { it.javaClass.name }
+  }
+
+  private fun configureRuntimeOptions(runtimeName: String, options: RuntimeOptions) {
+    synchronized(lock) {
+      val existingHost = hosts[runtimeName]
+      val existingOptions = runtimeOptions[runtimeName]
+      if (existingHost != null && existingOptions != null && existingOptions != options) {
+        Log.w(
+            LOG_TAG,
+            "runtime options ignored for already-created runtime runtimeName=$runtimeName " +
+                "existing=$existingOptions requested=$options")
+        return
+      }
+      runtimeOptions[runtimeName] = options
+    }
+  }
+
+  private fun runtimeOptionsFor(runtimeName: String): RuntimeOptions =
+      synchronized(lock) { runtimeOptions.getOrPut(runtimeName) { RuntimeOptions() } }
 
   private fun isAppDebuggable(context: Context): Boolean =
       (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
   private fun String?.orDefaultRuntimeName(): String =
       this?.takeIf { it.isNotBlank() } ?: DEFAULT_RUNTIME_NAME
+
+  private fun String?.orDefaultRuntimeKind(): String =
+      this?.takeIf { it.isNotBlank() } ?: DEFAULT_RUNTIME_KIND
 }
 
 private class ThreadedRuntimeBundleLoader(
     private val context: Context,
     private val runtimeName: String,
+    private val options: ThreadedRuntime.RuntimeOptions,
 ) : JSBundleLoader() {
   override fun loadScript(delegate: JSBundleLoaderDelegate): String {
     val prelude = File(context.cacheDir, "threaded-runtime-env-${safeFileName(runtimeName)}.js")
@@ -282,8 +373,10 @@ private class ThreadedRuntimeBundleLoader(
         __threadedRuntimeGlobal.globalThis = __threadedRuntimeGlobal;
         __threadedRuntimeGlobal._is_it_a_list_env = true;
         __threadedRuntimeGlobal.__THREADED_RUNTIME_ENV__ = {
-          kind: 'threaded-runtime',
+          kind: ${jsString(options.kind)},
           runtimeName: ${jsString(runtimeName)},
+          isBackgroundRuntime: ${options.kind != ThreadedRuntime.DEFAULT_RUNTIME_KIND},
+          useMainNativeModules: ${options.useMainNativeModules},
           version: 1
         };
         __threadedRuntimeGlobal.__COMPOSE_CHAT_LIST_ENV__ = {

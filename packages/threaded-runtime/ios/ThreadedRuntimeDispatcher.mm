@@ -24,4 +24,19 @@ void prewarmRuntime(const std::string &runtimeName)
   [ThreadedRuntime prewarmRuntime:NSStringFromStdString(runtimeName)];
 }
 
+void prewarmRuntime(
+    const std::string &runtimeName,
+    const std::string &kind,
+    bool useMainNativeModules)
+{
+  [ThreadedRuntime prewarmRuntime:NSStringFromStdString(runtimeName)
+                             kind:NSStringFromStdString(kind)
+             useMainNativeModules:useMainNativeModules];
+}
+
+void prewarmBusinessRuntime(const std::string &runtimeName)
+{
+  [ThreadedRuntime prewarmBusinessRuntime:NSStringFromStdString(runtimeName)];
+}
+
 } // namespace nativecompose::threadedruntime

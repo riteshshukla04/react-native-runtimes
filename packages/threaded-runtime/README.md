@@ -359,6 +359,8 @@ back to this repo's older app-local names, `BackgroundListBridge` and
 The native module exposes:
 
 - `prewarmRuntime(runtimeName)`
+- `prewarmRuntimeWithOptions(runtimeName, kind, useMainNativeModules)`
+- `prewarmBusinessRuntime(runtimeName)`
 - `preloadRuntime(runtimeName)`
 - `dispatchHeadlessTask(runtimeName, taskName, payloadJson)`
 - `runHeadlessTask(runtimeName, taskName, payloadJson)`
@@ -389,6 +391,35 @@ ThreadedRuntime.setExtraReactPackagesProvider {
 
 Those packages are installed only in the secondary runtime. The example app uses
 this to expose the shared zustand module and background list host to threaded RN.
+
+For an app-lifetime business runtime that should see the same native module set
+as the main runtime, pass the app package list once and prewarm the named
+business runtime:
+
+```kotlin
+import com.facebook.react.PackageList
+import com.nativecompose.threadedruntime.ThreadedRuntime
+
+ThreadedRuntime.setMainReactPackagesProvider {
+  PackageList(this).packages
+}
+
+ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "business-runtime")
+```
+
+That runtime receives `global.__THREADED_RUNTIME_ENV__` before the bundle runs:
+
+```tsx
+if (global.__THREADED_RUNTIME_ENV__?.kind === 'business-runtime') {
+  require('./src/businessRuntimeEntry');
+} else {
+  require('./src/mainRuntimeEntry');
+}
+```
+
+iOS threaded runtimes already use the configured React Native delegate for
+native-module lookup, so `ThreadedRuntime.prewarmBusinessRuntime("business-runtime")`
+uses the app's module resolution path.
 
 Host apps can prewarm a runtime from Kotlin before a threaded screen is needed:
 

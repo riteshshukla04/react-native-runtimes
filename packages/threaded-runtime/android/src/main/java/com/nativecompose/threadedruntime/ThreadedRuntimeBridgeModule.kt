@@ -28,6 +28,26 @@ class ThreadedRuntimeBridgeModule(private val reactContext: ReactApplicationCont
   }
 
   @ReactMethod
+  fun prewarmRuntimeWithOptions(
+      runtimeName: String?,
+      kind: String?,
+      useMainNativeModules: Boolean,
+      promise: Promise,
+  ) {
+    try {
+      ThreadedRuntime.prewarmRuntimeWithOptions(
+          reactContext,
+          runtimeName.orDefaultRuntimeName(),
+          kind,
+          useMainNativeModules,
+      )
+      promise.resolve(null)
+    } catch (error: Throwable) {
+      promise.reject("ERR_THREADED_RUNTIME_PREWARM", error)
+    }
+  }
+
+  @ReactMethod
   fun runHeadlessTask(
       runtimeName: String?,
       taskName: String,
