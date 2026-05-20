@@ -1,14 +1,15 @@
 # NativeComposeChat
 
-React Native 0.86 new-architecture benchmark app for a native-owned chat list.
+React Native 0.86 new-architecture benchmark app for multi-runtime rendering,
+shared state, and list baselines.
 
-The app exercises a Fabric component named `ComposeChatList`:
+The app exercises:
 
-- Android renders the list with Jetpack Compose `LazyColumn`.
-- iOS renders the list with SwiftUI `LazyVStack`.
-- Native owns scrolling, visible-window tracking, skeleton rows, dirty rows, and row recycling/content types.
-- React Native renders JSX cells on demand when native asks for visible or dirty indices.
-- Android has a second minimal React Native runtime for the background-list benchmark tab, and that runtime mounts its own JSX cells into the visible native list.
+- Main-runtime RN list baselines with FlatList and LegendList.
+- Threaded-runtime list surfaces with FlashList and LegendList.
+- Whole-screen threaded rendering for chat-style flows.
+- Shared state across runtimes through `@native-compose/threaded-zustand`.
+- Runtime prewarming, headless tasks, and a two-runtime architecture example.
 
 ## Running
 
@@ -28,20 +29,14 @@ cd android
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Maestro flows live under `maestro/`:
+## Documentation
 
-```sh
-npm run maestro
-```
+Start with the hosted docs:
 
-`maestro` must be installed separately.
+- [Native Compose Runtimes docs](https://szymon20000.github.io/react-native-runtimes/)
 
-## API Docs
+Source docs are also available in the repo:
 
-See [docs/native-list-api.md](docs/native-list-api.md) for:
-
-- Component props and commands.
-- Data operation/versioning contract.
-- Render request and dirty-item behavior.
-- Android second-runtime module selection.
-- Current platform notes and limitations.
+- [Threaded runtime package docs](packages/threaded-runtime/README.md)
+- [Threaded Zustand package docs](packages/threaded-zustand/README.md)
+- [Docusaurus source docs](website/docs/intro.md)

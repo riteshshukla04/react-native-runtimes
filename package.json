@@ -6,10 +6,6 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
-    "maestro": "maestro test maestro",
-    "maestro:reaction:no-flicker": "maestro test maestro/02-reaction-no-flicker.yaml",
-    "maestro:reaction:rerender": "maestro test maestro/03-reaction-rerender.yaml",
-    "maestro:scroll": "maestro test maestro/01-scroll-10k-snapshots.yaml",
     "start": "react-native start",
     "test": "jest"
   },
@@ -58,8 +54,6 @@
     },
     "ios": {
       "componentProvider": {
-        "ComposeChatList": "RCTComposeChatList",
-        "ComposeChatBackgroundHost": "RCTComposeChatBackgroundHost",
         "ComposeChatListItem": "RCTComposeChatListItem"
       }
     }

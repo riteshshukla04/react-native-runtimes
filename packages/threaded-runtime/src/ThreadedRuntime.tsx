@@ -64,8 +64,7 @@ type ThreadedRuntimeNativeModule = {
   getRuntimeNames?: () => Promise<string[]>;
 };
 
-const nativeRuntime = (NativeModules.ThreadedRuntime ??
-  NativeModules.BackgroundListBridge) as
+const nativeRuntime = NativeModules.ThreadedRuntime as
   | ThreadedRuntimeNativeModule
   | undefined;
 

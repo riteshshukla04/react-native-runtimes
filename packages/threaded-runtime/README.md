@@ -352,9 +352,7 @@ This package includes Android and iOS implementations under `android/` and
 
 `ThreadedRuntimeSurface` creates a named secondary runtime and mounts
 `ThreadedRuntimeHost` in that runtime. On Android this is backed by `ReactHost`;
-on iOS it is backed by `RCTHost` and a Fabric surface. The JS layer still falls
-back to this repo's older app-local names, `BackgroundListBridge` and
-`SecondRuntimeSurface`, while the package migration is in progress.
+on iOS it is backed by `RCTHost` and a Fabric surface.
 
 The native module exposes:
 

@@ -33,7 +33,6 @@ class MainApplication : Application(), ReactApplication {
     }
     ThreadedRuntime.setExtraReactPackagesProvider {
       listOf(
-          BackgroundListRendererPackage(),
           NitroModulesPackage(),
           ThreadedZustandPackage(),
           EaseViewPackage(),

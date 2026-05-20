@@ -23,10 +23,10 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import {FlashList, type FlashListRef} from '@shopify/flash-list';
-import {LegendList, type LegendListRef} from '@legendapp/list';
-import {EaseView} from 'react-native-ease';
-import {createSharedStore} from '@native-compose/threaded-zustand';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { LegendList, type LegendListRef } from '@legendapp/list';
+import { EaseView } from 'react-native-ease';
+import { createSharedStore } from '@native-compose/threaded-zustand';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -36,14 +36,8 @@ import {
   createRandomMessages,
   VersionedChatDataSource,
 } from './src/chat/VersionedChatDataSource';
-import {ChatBubble} from './src/chat/ChatBubble';
-import type {
-  ComposeChatListPlaceholderSpec,
-  RenderedChatItem,
-} from './src/native/ComposeChatListNativeComponent';
-import VersionedComposeChatList, {
-  type VersionedComposeChatListRef,
-} from './src/native/VersionedComposeChatList';
+import { ChatBubble } from './src/chat/ChatBubble';
+import type { RenderedChatItem } from './src/native/ComposeChatListNativeComponent';
 import {
   threadedComponent,
   Threaded,
@@ -56,7 +50,6 @@ import {
   twoRuntimeArchitectureStore,
 } from './src/examples/twoRuntimesArchitecture';
 
-type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
 type RnBenchmarkMode =
   | 'animated'
@@ -69,7 +62,7 @@ type SharedRuntimeMode =
   | 'two-runtimes-architecture'
   | 'threaded-chat-screen'
   | 'threaded-chat-app';
-type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
+type BenchmarkMode = RnBenchmarkMode | SharedRuntimeMode;
 type NavigationMode = 'launcher' | BenchmarkMode;
 type SharedTreeNodeId = 'root' | 'left' | 'right' | 'leftLeaf' | 'rightLeaf';
 type AppLaunchItem = {
@@ -176,28 +169,6 @@ const CHAT_THREAD_RUNTIME_NAMES = CHAT_THREADS.map(thread =>
 
 const APP_LAUNCH_SECTIONS: AppLaunchSection[] = [
   {
-    title: 'Native chat lists',
-    items: [
-      {
-        mode: 'main',
-        title: 'Native JSX',
-        eyebrow: 'Compose host',
-        description: 'Native list with JSX cells rendered by the main runtime.',
-        runtime: 'Main RN',
-        workload: '10k messages',
-      },
-      {
-        mode: 'background',
-        title: 'Native 2RN JSX',
-        eyebrow: 'Compose host',
-        description:
-          'Native list with JSX cells rendered by the threaded runtime.',
-        runtime: 'Threaded RN',
-        workload: '10k messages',
-      },
-    ],
-  },
-  {
     title: 'RN list baselines',
     items: [
       {
@@ -302,11 +273,11 @@ const TREE_NODES: Array<{
   level: number;
   children?: SharedTreeNodeId[];
 }> = [
-  {id: 'root', label: 'Root', level: 0, children: ['left', 'right']},
-  {id: 'left', label: 'Left', level: 1, children: ['leftLeaf']},
-  {id: 'right', label: 'Right', level: 1, children: ['rightLeaf']},
-  {id: 'leftLeaf', label: 'Left Leaf', level: 2},
-  {id: 'rightLeaf', label: 'Right Leaf', level: 2},
+  { id: 'root', label: 'Root', level: 0, children: ['left', 'right'] },
+  { id: 'left', label: 'Left', level: 1, children: ['leftLeaf'] },
+  { id: 'right', label: 'Right', level: 1, children: ['rightLeaf'] },
+  { id: 'leftLeaf', label: 'Left Leaf', level: 2 },
+  { id: 'rightLeaf', label: 'Right Leaf', level: 2 },
 ];
 
 const sharedTreeStore = createSharedStore<SharedTreeState>({
@@ -500,7 +471,7 @@ function AppContent() {
   const activeApp = APP_LAUNCH_ITEMS.find(item => item.mode === mode);
 
   return (
-    <View style={[styles.container, {paddingTop: safeAreaInsets.top}]}>
+    <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
       {mode === 'launcher' ? (
         <HomeLauncherScreen
           blockJsEnabled={blockJsEnabled}
@@ -557,11 +528,7 @@ function AppRouteContent({
 
   if (mode === 'animated' || mode === 'legendlist-main') {
     return (
-      <RnListBenchmarkScreen
-        key={mode}
-        blockStatus={blockStatus}
-        mode={mode}
-      />
+      <RnListBenchmarkScreen key={mode} blockStatus={blockStatus} mode={mode} />
     );
   }
 
@@ -575,14 +542,7 @@ function AppRouteContent({
     );
   }
 
-  return (
-    <ChatBenchmarkScreen
-      key={mode}
-      mode={mode}
-      listName={`${mode}-compose-chat-list`}
-      blockStatus={blockStatus}
-    />
-  );
+  return null;
 }
 
 function HomeLauncherScreen({
@@ -601,7 +561,8 @@ function HomeLauncherScreen({
       accessibilityLabel="home-launcher-screen"
       contentContainerStyle={styles.launcherContent}
       style={styles.launcher}
-      testID="home-launcher-screen">
+      testID="home-launcher-screen"
+    >
       <View style={styles.launcherHeader}>
         <View style={styles.launcherTitleBlock}>
           <Text style={styles.launcherEyebrow}>Native Compose Chat</Text>
@@ -645,11 +606,12 @@ function AppLaunchCard({
     <Pressable
       accessibilityLabel={`open-${item.mode}`}
       onPress={onPress}
-      style={({pressed}) => [
+      style={({ pressed }) => [
         styles.launcherCard,
         pressed && styles.launcherCardPressed,
       ]}
-      testID={`open-${item.mode}`}>
+      testID={`open-${item.mode}`}
+    >
       <View style={styles.launcherCardTop}>
         <Text style={styles.launcherCardEyebrow}>{item.eyebrow}</Text>
         <Text style={styles.launcherCardAction}>Open</Text>
@@ -683,7 +645,8 @@ function AppChromeHeader({
         accessibilityLabel="back-to-home"
         onPress={onBack}
         style={styles.backButton}
-        testID="back-to-home">
+        testID="back-to-home"
+      >
         <Text style={styles.backButtonText}>Back</Text>
       </Pressable>
       <View style={styles.appChromeTitleBlock}>
@@ -719,7 +682,8 @@ function BlockJsControl({
     <View
       accessibilityLabel="block-js-control"
       style={[styles.blockSwitch, compact && styles.blockSwitchCompact]}
-      testID="block-js-control">
+      testID="block-js-control"
+    >
       <View style={styles.blockSwitchLabel}>
         <Text style={styles.blockSwitchText}>Block JS</Text>
         {!compact ? (
@@ -732,7 +696,7 @@ function BlockJsControl({
         onValueChange={onValueChange}
         thumbColor="#FFFFFF"
         testID="block-js-switch"
-        trackColor={{false: '#CBD5E1', true: '#B91C1C'}}
+        trackColor={{ false: '#CBD5E1', true: '#B91C1C' }}
         value={value}
       />
     </View>
@@ -774,7 +738,8 @@ function HomeRuntimeScreen() {
     <View
       accessibilityLabel="home-runtime-screen"
       style={styles.homeScreen}
-      testID="home-runtime-screen">
+      testID="home-runtime-screen"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Runtime lab</Text>
         <Text style={styles.subtitle}>
@@ -786,14 +751,15 @@ function HomeRuntimeScreen() {
         <View
           accessibilityLabel="home-main-persistence-panel"
           style={styles.homePanel}
-          testID="home-main-persistence-panel">
+          testID="home-main-persistence-panel"
+        >
           <HomeCounterPanel runtimeLabel="main RN" />
         </View>
         <View style={styles.sharedTreeDivider} />
         <Threaded
           accessibilityLabel="home-threaded-persistence-panel"
           component={HomeThreadedPersistenceApp}
-          props={{runtimeLabel: 'threaded RN'}}
+          props={{ runtimeLabel: 'threaded RN' }}
           runtimeName={HOME_RUNTIME_NAME}
           style={styles.homeThreadedSurface}
           surfaceKey="home-threaded-persistence-panel"
@@ -811,7 +777,7 @@ function HomeRuntimeScreen() {
   );
 }
 
-function HomeCounterPanel({runtimeLabel}: {runtimeLabel: string}) {
+function HomeCounterPanel({ runtimeLabel }: { runtimeLabel: string }) {
   const counter = homePersistenceStore.useStore(
     state => state.counter,
     ['counter'],
@@ -846,15 +812,15 @@ function HomeCounterPanel({runtimeLabel}: {runtimeLabel: string}) {
       <View style={styles.homePanelHeader}>
         <Text style={styles.sharedTreeRuntime}>{runtimeLabel}</Text>
         <Text style={styles.sharedTreeMeta}>
-          rev {homePersistenceStore.getRevision('counter')} /{' '}
-          {hydrationStatus}
+          rev {homePersistenceStore.getRevision('counter')} / {hydrationStatus}
         </Text>
       </View>
       <View style={styles.homeCounterBlock}>
         <Text
           accessibilityLabel={`home-counter-${runtimeLabel}`}
           style={styles.homeCounter}
-          testID={`home-counter-${panelId}`}>
+          testID={`home-counter-${panelId}`}
+        >
           {counter.count}
         </Text>
         <Text style={styles.homeCounterMeta}>
@@ -949,7 +915,8 @@ function TwoRuntimesArchitectureScreen() {
     <View
       accessibilityLabel="two-runtimes-architecture-screen"
       style={styles.twoRuntimeScreen}
-      testID="two-runtimes-architecture-screen">
+      testID="two-runtimes-architecture-screen"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>2 runtimes architecture</Text>
         <Text style={styles.subtitle}>
@@ -983,7 +950,8 @@ function TwoRuntimesArchitectureScreen() {
             updated {formatFetchTime(business.lastUpdatedAt)}
           </Text>
           <Text style={styles.twoRuntimeDetailText}>
-            active runtimes {runtimeNames.length ? runtimeNames.join(', ') : 'pending'}
+            active runtimes{' '}
+            {runtimeNames.length ? runtimeNames.join(', ') : 'pending'}
           </Text>
         </View>
         <View style={styles.twoRuntimeMetrics}>
@@ -995,7 +963,8 @@ function TwoRuntimesArchitectureScreen() {
                 style={[
                   styles.twoRuntimeMetricDelta,
                   metric.delta < 0 && styles.twoRuntimeMetricDeltaDown,
-                ]}>
+                ]}
+              >
                 {metric.delta >= 0 ? '+' : ''}
                 {metric.delta} / {formatFetchTime(metric.updatedAt)}
               </Text>
@@ -1024,7 +993,7 @@ function TwoRuntimesArchitectureScreen() {
   );
 }
 
-function ThreadedChatScreenSurface({blockStatus}: {blockStatus: string}) {
+function ThreadedChatScreenSurface({ blockStatus }: { blockStatus: string }) {
   return (
     <ThreadedScreen
       accessibilityLabel="threaded-chat-screen"
@@ -1043,7 +1012,7 @@ function ThreadedChatScreenSurface({blockStatus}: {blockStatus: string}) {
   );
 }
 
-function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
+function ThreadedChatAppExample({ blockStatus }: { blockStatus: string }) {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const selectedThread =
     CHAT_THREADS.find(thread => thread.id === selectedThreadId) ?? null;
@@ -1068,7 +1037,8 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
       <View
         accessibilityLabel="threaded-chat-app-conversation"
         style={styles.threadedChatAppScreen}
-        testID="threaded-chat-app-conversation">
+        testID="threaded-chat-app-conversation"
+      >
         <View style={styles.threadedChatAppNav}>
           <ActionButton
             id="threaded-chat-app-back"
@@ -1105,7 +1075,8 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
     <View
       accessibilityLabel="threaded-chat-thread-picker"
       style={styles.threadPickerScreen}
-      testID="threaded-chat-thread-picker">
+      testID="threaded-chat-thread-picker"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Threaded chat app</Text>
         <Text style={styles.subtitle}>
@@ -1120,7 +1091,8 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
             key={thread.id}
             onPress={() => openThread(thread.id)}
             style={styles.threadRow}
-            testID={`open-chat-thread-${thread.id}`}>
+            testID={`open-chat-thread-${thread.id}`}
+          >
             <View style={styles.threadRowText}>
               <View style={styles.threadRowTitleLine}>
                 <Text style={styles.threadRowTitle}>{thread.title}</Text>
@@ -1203,7 +1175,7 @@ function ThreadedChatScreenContent({
   const [itemCount, setItemCount] = useState(source.count);
   const rows = useMemo(
     () =>
-      Array.from({length: itemCount}, (_, index) => source.renderItem(index))
+      Array.from({ length: itemCount }, (_, index) => source.renderItem(index))
         .filter(item => item != null)
         .reverse(),
     [dataVersion, itemCount, source],
@@ -1238,7 +1210,7 @@ function ThreadedChatScreenContent({
   }, [publishState, runtimeName, source, threadTitle]);
 
   const renderThreadedChatRow = useCallback<ListRenderItem<RenderedChatItem>>(
-    ({item}) => (
+    ({ item }) => (
       <ChatBubble
         item={item}
         onReaction={reaction => {
@@ -1261,7 +1233,8 @@ function ThreadedChatScreenContent({
     <View
       accessibilityLabel="threaded-chat-screen-content"
       style={styles.threadedChatScreen}
-      testID="threaded-chat-screen-content">
+      testID="threaded-chat-screen-content"
+    >
       <View style={styles.threadedChatHeader}>
         <View style={styles.threadedChatTitleBlock}>
           <Text style={styles.title}>{threadTitle}</Text>
@@ -1361,14 +1334,15 @@ function SharedTreeRuntimeScreen() {
         <View
           accessibilityLabel="shared-tree-main-panel"
           style={styles.sharedTreePanel}
-          testID="shared-tree-main-panel">
+          testID="shared-tree-main-panel"
+        >
           <SharedTreePanel runtimeLabel="main RN" />
         </View>
         <View style={styles.sharedTreeDivider} />
         <Threaded
           accessibilityLabel="shared-tree-threaded-panel"
           component={SharedTreeThreadedApp}
-          props={{interactive: false, runtimeLabel: 'threaded RN'}}
+          props={{ interactive: false, runtimeLabel: 'threaded RN' }}
           runtimeName="shared-tree-runtime"
           style={styles.sharedTreePanel}
           surfaceKey="shared-tree-threaded-panel"
@@ -1421,7 +1395,7 @@ function SharedTreePanel({
         {TREE_NODES.map(node => {
           const nodeStyle = [
             styles.sharedTreeNode,
-            {backgroundColor: nodes[node.id], marginLeft: node.level * 28},
+            { backgroundColor: nodes[node.id], marginLeft: node.level * 28 },
           ];
           const nodeContent = (
             <>
@@ -1440,7 +1414,8 @@ function SharedTreePanel({
                 void pressNode(node.id);
               }}
               style={nodeStyle}
-              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}>
+              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}
+            >
               {nodeContent}
             </Pressable>
           ) : (
@@ -1448,7 +1423,8 @@ function SharedTreePanel({
               accessibilityLabel={`shared-tree-node-${runtimeLabel}-${node.id}`}
               key={node.id}
               style={nodeStyle}
-              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}>
+              testID={`shared-tree-node-${runtimeLabel}-${node.id}`}
+            >
               {nodeContent}
             </View>
           );
@@ -1494,14 +1470,15 @@ function PokemonRuntimeScreen() {
         <View
           accessibilityLabel="pokemon-main-producer"
           style={styles.pokemonProducerPanel}
-          testID="pokemon-main-producer">
+          testID="pokemon-main-producer"
+        >
           <PokemonProducerPanel />
         </View>
         <View style={styles.sharedTreeDivider} />
         <Threaded
           accessibilityLabel="pokemon-threaded-consumer"
           component={PokemonThreadedApp}
-          props={{runtimeLabel: 'threaded RN'}}
+          props={{ runtimeLabel: 'threaded RN' }}
           runtimeName="pokemon-runtime"
           style={styles.pokemonConsumerSurface}
           surfaceKey="pokemon-threaded-consumer"
@@ -1529,7 +1506,7 @@ function PokemonPageFetcher() {
   const activeRequestRef = useRef(0);
 
   async function fetchPokemonPage(request: PokemonCatalogState) {
-    const {requestId, requestedOffset} = request;
+    const { requestId, requestedOffset } = request;
     activeRequestRef.current = requestId;
 
     await pokemonStore.setSubtreeState(
@@ -1552,7 +1529,7 @@ function PokemonPageFetcher() {
         throw new Error(`HTTP ${response.status}`);
       }
       const payload = (await response.json()) as {
-        results: Array<{name: string; url: string}>;
+        results: Array<{ name: string; url: string }>;
       };
       const items = payload.results.map(item => ({
         id: pokemonIdFromUrl(item.url),
@@ -1634,8 +1611,8 @@ function PokemonProducerStatus() {
   return (
     <>
       <Text numberOfLines={2} style={styles.pokemonStatus}>
-        {catalog.status} / {itemCount} items / next offset{' '}
-        {catalog.nextOffset} / requested by {catalog.requestedBy} /{' '}
+        {catalog.status} / {itemCount} items / next offset {catalog.nextOffset}{' '}
+        / requested by {catalog.requestedBy} /{' '}
         {formatFetchTime(catalog.fetchedAt)}
       </Text>
       {catalog.error ? (
@@ -1668,14 +1645,16 @@ const PokemonProducerActions = memo(function PokemonProducerActions() {
         accessibilityLabel="pokemon-request-more"
         onPress={requestNextPage}
         style={styles.actionButton}
-        testID="pokemon-request-more">
+        testID="pokemon-request-more"
+      >
         <Text style={styles.actionText}>Request</Text>
       </Pressable>
       <Pressable
         accessibilityLabel="pokemon-clear"
         onPress={clearCatalog}
         style={styles.actionButton}
-        testID="pokemon-clear">
+        testID="pokemon-clear"
+      >
         <Text style={styles.actionText}>Clear</Text>
       </Pressable>
     </View>
@@ -1708,11 +1687,7 @@ function useStablePokemonItems(items: PokemonEntry[]) {
     const nextCache = new Map<number, PokemonEntry>();
     const stableItems = items.map(item => {
       const cached = cacheRef.current.get(item.id);
-      if (
-        cached &&
-        cached.name === item.name &&
-        cached.url === item.url
-      ) {
+      if (cached && cached.name === item.name && cached.url === item.url) {
         nextCache.set(item.id, cached);
         return cached;
       }
@@ -1760,7 +1735,7 @@ const PokemonEmptyList = memo(function PokemonEmptyList() {
 
 const pokemonKeyExtractor = (item: PokemonEntry) => String(item.id);
 
-function PokemonConsumerPanel({runtimeLabel}: {runtimeLabel: string}) {
+function PokemonConsumerPanel({ runtimeLabel }: { runtimeLabel: string }) {
   const catalog = pokemonStore.useStore(state => state.catalog, ['catalog']);
 
   return (
@@ -1790,7 +1765,7 @@ const PokemonItemsList = memo(function PokemonItemsList({
   const canRequestMoreAfterScrollRef = useRef(false);
   const lastRequestedItemCountRef = useRef(-1);
   const renderPokemonItem = useCallback(
-    ({item}: {item: PokemonEntry}) => (
+    ({ item }: { item: PokemonEntry }) => (
       <PokemonRow id={item.id} name={item.name} />
     ),
     [],
@@ -1860,231 +1835,6 @@ export const PokemonThreadedApp = threadedComponent<PokemonThreadedAppProps>(
   },
 );
 
-function ChatBenchmarkScreen({
-  mode,
-  listName,
-  blockStatus,
-}: {
-  mode: NativeBenchmarkMode;
-  listName: string;
-  blockStatus: string;
-}) {
-  const listRef = useRef<VersionedComposeChatListRef | null>(null);
-  const sourceRef = useRef<VersionedChatDataSource | null>(null);
-  const nextIdRef = useRef(10_000);
-
-  if (sourceRef.current == null) {
-    sourceRef.current = new VersionedChatDataSource(
-      createRandomMessages(10_000),
-    );
-  }
-
-  const source = sourceRef.current;
-  const [dataRevision, setDataRevision] = useState(0);
-
-  const stats = `${source.count.toLocaleString()} messages / v${
-    source.version
-  } / ${blockStatus}`;
-  const placeholderSpec = useMemo<ComposeChatListPlaceholderSpec>(
-    () => ({
-      version: 1,
-      defaultVariant: 'chat',
-      templates: [
-        {
-          key: 'other-short',
-          variant: 'chat',
-          align: 'start',
-          minWidth: 180,
-          maxWidth: 292,
-          lines: 2,
-          showFooter: true,
-        },
-        {
-          key: 'own-medium',
-          variant: 'chat',
-          align: 'end',
-          minWidth: 190,
-          maxWidth: 322,
-          lines: 3,
-          showFooter: true,
-        },
-        {
-          key: 'other-compact',
-          variant: 'compact',
-          align: 'start',
-          minWidth: 210,
-          maxWidth: 300,
-          lines: 1,
-        },
-      ],
-    }),
-    [],
-  );
-
-  function publishState() {
-    setDataRevision(revision => revision + 1);
-  }
-
-  function addMessage() {
-    const id = `new-${nextIdRef.current++}`;
-    source.addAtIndex(0, createRandomMessage(id, nextIdRef.current));
-    publishState();
-  }
-
-  function prependThousandMessages() {
-    const startId = nextIdRef.current;
-    const messages = Array.from({length: 1000}, (_, offset) =>
-      createRandomMessage(`bulk-${startId + offset}`, startId + offset),
-    );
-    nextIdRef.current += messages.length;
-    source.addManyAtIndex(0, messages);
-    publishState();
-  }
-
-  function editLatest() {
-    source.updateItem(0, {
-      body: `Edited at version ${
-        source.version + 1
-      }. This row was invalidated by index and filled again after native requested it.`,
-    });
-    publishState();
-  }
-
-  function reactToLatest() {
-    source.toggleReaction(0);
-    publishState();
-  }
-
-  function removeLatest() {
-    source.removeAtIndex(0);
-    publishState();
-  }
-
-  function swapFirstTenPairs() {
-    source.swapAdjacentPairs(0, 10);
-    publishState();
-  }
-
-  function scrollToBenchmarkItem() {
-    if (!listRef.current) {
-      return;
-    }
-
-    listRef.current.scrollToItem(7500, false);
-  }
-
-  function scrollToSwapTail() {
-    if (!listRef.current) {
-      return;
-    }
-
-    listRef.current.scrollToItem(8, false);
-  }
-
-  function resetLatestRender() {
-    if (!listRef.current) {
-      return;
-    }
-
-    listRef.current.resetItem(0);
-  }
-
-  return (
-    <>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>
-            {mode === 'main'
-              ? 'Native LazyColumn + JSX Cells'
-              : 'Native LazyColumn + 2nd RN JSX'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {stats} / Jetpack Compose owns scrolling
-          </Text>
-        </View>
-        <View style={styles.actions}>
-          <ActionButton
-            id="action-add-message"
-            label="+"
-            onPress={addMessage}
-          />
-          <ActionButton
-            id="action-prepend-1000"
-            label="1k+"
-            onPress={prependThousandMessages}
-          />
-          <ActionButton
-            id="action-edit-message"
-            label="Edit"
-            onPress={editLatest}
-          />
-          <ActionButton
-            id="action-react-latest"
-            label="+1"
-            onPress={reactToLatest}
-          />
-          <ActionButton
-            id="action-delete-message"
-            label="Del"
-            onPress={removeLatest}
-          />
-          <ActionButton
-            id="action-swap-first-ten-pairs"
-            label="Swap"
-            onPress={swapFirstTenPairs}
-          />
-          <ActionButton
-            id="action-scroll-to-7500"
-            label="7500"
-            onPress={scrollToBenchmarkItem}
-          />
-          <ActionButton
-            id="action-scroll-to-8"
-            label="8"
-            onPress={scrollToSwapTail}
-          />
-          <ActionButton
-            id="action-reset-item-0"
-            label="R0"
-            onPress={resetLatestRender}
-          />
-        </View>
-      </View>
-      <VersionedComposeChatList
-        ref={listRef}
-        accessibilityLabel={`compose-chat-list-${mode}`}
-        backgroundAppName="ComposeChatBackgroundRenderer"
-        data={source}
-        extraData={dataRevision}
-        initialIndexToRender={0}
-        keyExtractor={item => item.id}
-        listName={listName}
-        onReactToItem={(index, reaction) => {
-          source.toggleReaction(index, reaction);
-          publishState();
-        }}
-        placeholderSpec={placeholderSpec}
-        renderItem={({item}) =>
-          renderFabricChatItem(item, reaction => {
-            source.toggleReaction(item.index, reaction);
-            publishState();
-          })
-        }
-        renderMode={mode}
-        style={styles.list}
-        testID={`compose-chat-list-${mode}`}
-      />
-    </>
-  );
-}
-
-function renderFabricChatItem(
-  item: RenderedChatItem,
-  onReaction: (reaction: string) => void,
-) {
-  return <ChatBubble item={item} onReaction={onReaction} />;
-}
-
 function RnListBenchmarkScreen({
   blockStatus,
   mode,
@@ -2116,7 +1866,7 @@ function RnListBenchmarkScreen({
   );
   const rowLayoutsRef = useRef(new Map<number, VisibleRowLayout>());
   const indices = useMemo(
-    () => Array.from({length: itemCount}, (_, index) => index),
+    () => Array.from({ length: itemCount }, (_, index) => index),
     [itemCount],
   );
   const stats = useMemo(
@@ -2141,7 +1891,7 @@ function RnListBenchmarkScreen({
 
   function prependThousandMessages() {
     const startId = nextIdRef.current;
-    const messages = Array.from({length: 1000}, (_, offset) =>
+    const messages = Array.from({ length: 1000 }, (_, offset) =>
       createRandomMessage(`bulk-${startId + offset}`, startId + offset),
     );
     nextIdRef.current += messages.length;
@@ -2172,7 +1922,7 @@ function RnListBenchmarkScreen({
     scrollRnListToIndex(listRef.current, 7500);
   }
 
-  const renderItem = ({item: index}: {item: number; index: number}) => {
+  const renderItem = ({ item: index }: { item: number; index: number }) => {
     const renderedItem = source.renderItem(index);
     if (!renderedItem) {
       return null;
@@ -2270,7 +2020,7 @@ function renderRnList({
     FlatList<number> | FlashListRef<number> | LegendListRef | null
   >;
   mode: RnBenchmarkMode;
-  renderItem: (info: {item: number; index: number}) => ReactElement | null;
+  renderItem: (info: { item: number; index: number }) => ReactElement | null;
   source: VersionedChatDataSource;
 }) {
   const keyExtractor = (index: number) =>
@@ -2316,7 +2066,7 @@ function renderRnList({
       ref={listRef as RefObject<FlatList<number>>}
       initialNumToRender={10}
       maxToRenderPerBatch={10}
-      onScrollToIndexFailed={({index}) => {
+      onScrollToIndexFailed={({ index }) => {
         requestAnimationFrame(() => {
           scrollRnListToIndex(listRef.current, index);
         });
@@ -2344,8 +2094,8 @@ function titleForRnMode(mode: RnBenchmarkMode) {
 
 function runtimeKind() {
   const globals = globalThis as {
-    __COMPOSE_CHAT_LIST_ENV__?: {kind?: string};
-    __THREADED_RUNTIME_ENV__?: {kind?: string};
+    __COMPOSE_CHAT_LIST_ENV__?: { kind?: string };
+    __THREADED_RUNTIME_ENV__?: { kind?: string };
   };
   return (
     globals.__THREADED_RUNTIME_ENV__?.kind ??
@@ -2359,7 +2109,7 @@ function scrollRnListToIndex(
   index: number,
 ) {
   if (!list) return;
-  list.scrollToIndex({index, animated: false});
+  list.scrollToIndex({ index, animated: false });
 }
 
 function scrollRnListToOffset(
@@ -2369,9 +2119,9 @@ function scrollRnListToOffset(
   if (!list) return;
   const unsafeList = list as any;
   if (typeof unsafeList.scrollToOffset === 'function') {
-    unsafeList.scrollToOffset({offset, animated: false});
+    unsafeList.scrollToOffset({ offset, animated: false });
   } else {
-    unsafeList.scrollToIndex({index: 0, animated: false});
+    unsafeList.scrollToIndex({ index: 0, animated: false });
   }
 }
 
@@ -2387,16 +2137,17 @@ function EasedChatBubble({
   return (
     <EaseView
       accessibilityLabel={`rn-ease-chat-row-${item.index}-v${item.renderVersion}`}
-      animate={{opacity: 1, translateY: 0, scale: 1}}
+      animate={{ opacity: 1, translateY: 0, scale: 1 }}
       collapsable={false}
-      initialAnimate={{opacity: 0, translateY: 16, scale: 0.96}}
+      initialAnimate={{ opacity: 0, translateY: 16, scale: 0.96 }}
       style={[styles.rnEaseRow, item.isOwn && styles.rnEaseRowOwn]}
       onLayout={onLayout}
       transition={{
-        opacity: {type: 'timing', duration: 160, easing: 'easeOut'},
-        transform: {type: 'spring', damping: 17, stiffness: 240, mass: 1},
+        opacity: { type: 'timing', duration: 160, easing: 'easeOut' },
+        transform: { type: 'spring', damping: 17, stiffness: 240, mass: 1 },
       }}
-      useHardwareLayer>
+      useHardwareLayer
+    >
       <ChatBubble
         item={item}
         onReaction={onReaction}
@@ -2471,7 +2222,8 @@ function ActionButton({
       accessibilityLabel={id}
       onPress={onPress}
       style={styles.actionButton}
-      testID={id}>
+      testID={id}
+    >
       <Text style={styles.actionText}>{label}</Text>
     </Pressable>
   );
@@ -3013,7 +2765,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
     shadowColor: '#111827',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.14,
     shadowRadius: 3,
   },

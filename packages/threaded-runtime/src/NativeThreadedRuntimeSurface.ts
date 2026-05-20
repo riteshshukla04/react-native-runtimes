@@ -1,5 +1,4 @@
 import {
-  UIManager,
   requireNativeComponent,
   type HostComponent,
   type ViewProps,
@@ -15,11 +14,6 @@ export interface NativeProps extends ViewProps {
   surfaceKey?: string;
 }
 
-const nativeSurfaceName =
-  UIManager.getViewManagerConfig?.('ThreadedRuntimeSurface') != null
-    ? 'ThreadedRuntimeSurface'
-    : 'SecondRuntimeSurface';
-
 export default requireNativeComponent<NativeProps>(
-  nativeSurfaceName,
+  'ThreadedRuntimeSurface',
 ) as HostComponent<NativeProps>;
