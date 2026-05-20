@@ -11,6 +11,13 @@
 
 static NSString *const ThreadedRuntimeDefaultRuntimeName = @"background-list";
 static NSString *const ThreadedRuntimeDefaultHostAppName = @"ThreadedRuntimeHost";
+static NSString *const ThreadedRuntimeHeadlessTaskRunnerModule = @"ThreadedRuntimeHeadlessTaskRunner";
+
+@interface ThreadedRuntime (Private)
+
++ (void)runtimeDidStartWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host;
+
+@end
 
 @interface ThreadedRuntimeHostDelegate : NSObject <RCTHostDelegate>
 
@@ -37,6 +44,7 @@ static NSString *const ThreadedRuntimeDefaultHostAppName = @"ThreadedRuntimeHost
   if ([_delegate respondsToSelector:@selector(hostDidStart:)]) {
     [_delegate hostDidStart:host];
   }
+  [ThreadedRuntime runtimeDidStartWithRuntimeName:_runtimeName host:host];
 }
 
 - (NSArray<NSString *> *)unstableModulesRequiringMainQueueSetup
@@ -172,6 +180,36 @@ static NSMutableDictionary<NSString *, ThreadedRuntimeTurboModuleDelegate *> *Th
   return delegates;
 }
 
+static NSMutableDictionary<NSString *, NSMutableArray<NSDictionary<NSString *, NSString *> *> *> *ThreadedRuntimePendingHeadlessTasks()
+{
+  static NSMutableDictionary<NSString *, NSMutableArray<NSDictionary<NSString *, NSString *> *> *> *tasks;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    tasks = [NSMutableDictionary new];
+  });
+  return tasks;
+}
+
+static NSMutableSet<NSString *> *ThreadedRuntimeStartingRuntimeNames()
+{
+  static NSMutableSet<NSString *> *runtimeNames;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    runtimeNames = [NSMutableSet new];
+  });
+  return runtimeNames;
+}
+
+static NSMutableSet<NSString *> *ThreadedRuntimeStartedRuntimeNames()
+{
+  static NSMutableSet<NSString *> *runtimeNames;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    runtimeNames = [NSMutableSet new];
+  });
+  return runtimeNames;
+}
+
 static id<RCTReactNativeFactoryDelegate> configuredDelegate;
 static NSDictionary *configuredLaunchOptions;
 
@@ -191,7 +229,8 @@ static NSDictionary *configuredLaunchOptions;
 {
   NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
   BOOL reused = ThreadedRuntimeHosts()[normalizedRuntimeName] != nil;
-  [[self ensureHostWithRuntimeName:normalizedRuntimeName] start];
+  RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
+  [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
   NSLog(
       @"[ThreadedRuntime] runtime prewarm runtimeName=%@ reused=%@ active=%@",
       normalizedRuntimeName,
@@ -204,9 +243,53 @@ static NSDictionary *configuredLaunchOptions;
       ThreadedRuntimeHosts().allKeys);
 }
 
++ (void)dispatchHeadlessTaskWithRuntimeName:(NSString *)runtimeName
+                                   taskName:(NSString *)taskName
+                                payloadJson:(NSString *)payloadJson
+{
+  NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
+  RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
+  NSDictionary<NSString *, NSString *> *task = @{
+    @"taskName" : taskName ?: @"",
+    @"payloadJson" : payloadJson ?: @"null",
+  };
+
+  @synchronized(self) {
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *pending =
+        ThreadedRuntimePendingHeadlessTasks()[normalizedRuntimeName];
+    if (pending == nil) {
+      pending = [NSMutableArray new];
+      ThreadedRuntimePendingHeadlessTasks()[normalizedRuntimeName] = pending;
+    }
+    [pending addObject:task];
+  }
+
+  [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
+  NSLog(
+      @"[ThreadedRuntime] headless task queued runtimeName=%@ taskName=%@",
+      normalizedRuntimeName,
+      taskName);
+  RCTLogInfo(
+      @"[ThreadedRuntime] headless task queued runtimeName=%@ taskName=%@",
+      normalizedRuntimeName,
+      taskName);
+}
+
++ (void)runHeadlessTaskWithRuntimeName:(NSString *)runtimeName
+                              taskName:(NSString *)taskName
+                           payloadJson:(NSString *)payloadJson
+{
+  [self dispatchHeadlessTaskWithRuntimeName:runtimeName taskName:taskName payloadJson:payloadJson];
+}
+
 + (void)destroyRuntime:(NSString *)runtimeName
 {
   NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
+  @synchronized(self) {
+    [ThreadedRuntimePendingHeadlessTasks() removeObjectForKey:normalizedRuntimeName];
+    [ThreadedRuntimeStartingRuntimeNames() removeObject:normalizedRuntimeName];
+    [ThreadedRuntimeStartedRuntimeNames() removeObject:normalizedRuntimeName];
+  }
   [ThreadedRuntimeHosts() removeObjectForKey:normalizedRuntimeName];
   [ThreadedRuntimeHostDelegates() removeObjectForKey:normalizedRuntimeName];
   [ThreadedRuntimeTurboModuleDelegates() removeObjectForKey:normalizedRuntimeName];
@@ -219,6 +302,11 @@ static NSDictionary *configuredLaunchOptions;
   [ThreadedRuntimeHosts() removeAllObjects];
   [ThreadedRuntimeHostDelegates() removeAllObjects];
   [ThreadedRuntimeTurboModuleDelegates() removeAllObjects];
+  @synchronized(self) {
+    [ThreadedRuntimePendingHeadlessTasks() removeAllObjects];
+    [ThreadedRuntimeStartingRuntimeNames() removeAllObjects];
+    [ThreadedRuntimeStartedRuntimeNames() removeAllObjects];
+  }
   NSLog(@"[ThreadedRuntime] runtime destroyAll");
   RCTLogInfo(@"[ThreadedRuntime] runtime destroyAll");
 }
@@ -236,6 +324,79 @@ static NSDictionary *configuredLaunchOptions;
   NSString *normalizedAppName = appName.length > 0 ? appName : ThreadedRuntimeDefaultHostAppName;
   RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
   return [host createSurfaceWithModuleName:normalizedAppName initialProperties:properties ?: @{}];
+}
+
++ (void)startRuntimeAndFlushWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BOOL shouldStart = NO;
+    @synchronized(self) {
+      if ([ThreadedRuntimeStartedRuntimeNames() containsObject:runtimeName]) {
+        [self flushHeadlessTasksWithRuntimeName:runtimeName host:host];
+        return;
+      }
+      if (![ThreadedRuntimeStartingRuntimeNames() containsObject:runtimeName]) {
+        [ThreadedRuntimeStartingRuntimeNames() addObject:runtimeName];
+        shouldStart = YES;
+      }
+    }
+
+    if (shouldStart) {
+      @try {
+        [host start];
+      } @catch (NSException *exception) {
+        @synchronized(self) {
+          [ThreadedRuntimeStartingRuntimeNames() removeObject:runtimeName];
+        }
+        NSLog(
+            @"[ThreadedRuntime] runtime start failed runtimeName=%@ reason=%@",
+            runtimeName,
+            exception.reason);
+        RCTLogError(
+            @"[ThreadedRuntime] runtime start failed runtimeName=%@ reason=%@",
+            runtimeName,
+            exception.reason);
+      }
+    }
+  });
+}
+
++ (void)runtimeDidStartWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host
+{
+  NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
+  @synchronized(self) {
+    [ThreadedRuntimeStartingRuntimeNames() removeObject:normalizedRuntimeName];
+    [ThreadedRuntimeStartedRuntimeNames() addObject:normalizedRuntimeName];
+  }
+  [self flushHeadlessTasksWithRuntimeName:normalizedRuntimeName host:host];
+}
+
++ (void)flushHeadlessTasksWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host
+{
+  NSArray<NSDictionary<NSString *, NSString *> *> *tasks;
+  @synchronized(self) {
+    if (![ThreadedRuntimeStartedRuntimeNames() containsObject:runtimeName]) {
+      return;
+    }
+    tasks = [ThreadedRuntimePendingHeadlessTasks()[runtimeName] copy];
+    [ThreadedRuntimePendingHeadlessTasks() removeObjectForKey:runtimeName];
+  }
+
+  for (NSDictionary<NSString *, NSString *> *task in tasks) {
+    NSString *taskName = task[@"taskName"] ?: @"";
+    NSString *payloadJson = task[@"payloadJson"] ?: @"null";
+    [host callFunctionOnJSModule:ThreadedRuntimeHeadlessTaskRunnerModule
+                          method:@"run"
+                            args:@[ taskName, payloadJson, runtimeName ]];
+    NSLog(
+        @"[ThreadedRuntime] headless task dispatched runtimeName=%@ taskName=%@",
+        runtimeName,
+        taskName);
+    RCTLogInfo(
+        @"[ThreadedRuntime] headless task dispatched runtimeName=%@ taskName=%@",
+        runtimeName,
+        taskName);
+  }
 }
 
 + (RCTHost *)ensureHostWithRuntimeName:(NSString *)runtimeName
@@ -297,6 +458,36 @@ RCT_EXPORT_METHOD(prewarmRuntime
     resolve(nil);
   } @catch (NSException *exception) {
     reject(@"ERR_THREADED_RUNTIME_PREWARM", exception.reason, nil);
+  }
+}
+
+RCT_EXPORT_METHOD(runHeadlessTask
+                  : (NSString *)runtimeName taskName
+                  : (NSString *)taskName payloadJson
+                  : (NSString *)payloadJson resolver
+                  : (RCTPromiseResolveBlock)resolve rejecter
+                  : (RCTPromiseRejectBlock)reject)
+{
+  @try {
+    [ThreadedRuntime runHeadlessTaskWithRuntimeName:runtimeName taskName:taskName payloadJson:payloadJson];
+    resolve(nil);
+  } @catch (NSException *exception) {
+    reject(@"ERR_THREADED_RUNTIME_HEADLESS_TASK", exception.reason, nil);
+  }
+}
+
+RCT_EXPORT_METHOD(dispatchHeadlessTask
+                  : (NSString *)runtimeName taskName
+                  : (NSString *)taskName payloadJson
+                  : (NSString *)payloadJson resolver
+                  : (RCTPromiseResolveBlock)resolve rejecter
+                  : (RCTPromiseRejectBlock)reject)
+{
+  @try {
+    [ThreadedRuntime dispatchHeadlessTaskWithRuntimeName:runtimeName taskName:taskName payloadJson:payloadJson];
+    resolve(nil);
+  } @catch (NSException *exception) {
+    reject(@"ERR_THREADED_RUNTIME_HEADLESS_TASK", exception.reason, nil);
   }
 }
 

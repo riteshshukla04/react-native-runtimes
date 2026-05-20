@@ -64,7 +64,20 @@ type SharedRuntimeMode =
   | 'threaded-chat-screen'
   | 'threaded-chat-app';
 type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
+type NavigationMode = 'launcher' | BenchmarkMode;
 type SharedTreeNodeId = 'root' | 'left' | 'right' | 'leftLeaf' | 'rightLeaf';
+type AppLaunchItem = {
+  mode: BenchmarkMode;
+  title: string;
+  eyebrow: string;
+  description: string;
+  runtime: string;
+  workload: string;
+};
+type AppLaunchSection = {
+  title: string;
+  items: AppLaunchItem[];
+};
 type ChatThreadSummary = {
   id: string;
   title: string;
@@ -146,6 +159,117 @@ const CHAT_THREADS: ChatThreadSummary[] = [
   },
 ];
 const DEFAULT_CHAT_THREAD = CHAT_THREADS[0];
+const APP_LAUNCH_SECTIONS: AppLaunchSection[] = [
+  {
+    title: 'Native chat lists',
+    items: [
+      {
+        mode: 'main',
+        title: 'Native JSX',
+        eyebrow: 'Compose host',
+        description: 'Native list with JSX cells rendered by the main runtime.',
+        runtime: 'Main RN',
+        workload: '10k messages',
+      },
+      {
+        mode: 'background',
+        title: 'Native 2RN JSX',
+        eyebrow: 'Compose host',
+        description:
+          'Native list with JSX cells rendered by the threaded runtime.',
+        runtime: 'Threaded RN',
+        workload: '10k messages',
+      },
+    ],
+  },
+  {
+    title: 'RN list baselines',
+    items: [
+      {
+        mode: 'animated',
+        title: 'RN FlatList',
+        eyebrow: 'Baseline',
+        description: 'FlatList owns scrolling and renders eased chat rows.',
+        runtime: 'Main RN',
+        workload: '10k messages',
+      },
+      {
+        mode: 'flashlist',
+        title: 'FlashList',
+        eyebrow: 'Threaded list',
+        description: 'FlashList runs inside a secondary runtime surface.',
+        runtime: 'Threaded RN',
+        workload: '10k messages',
+      },
+      {
+        mode: 'legendlist',
+        title: 'Legend 2RN',
+        eyebrow: 'Threaded list',
+        description: 'LegendList runs inside a secondary runtime surface.',
+        runtime: 'Threaded RN',
+        workload: '10k messages',
+      },
+      {
+        mode: 'legendlist-main',
+        title: 'Legend Main',
+        eyebrow: 'Baseline',
+        description: 'LegendList runs on the main runtime for comparison.',
+        runtime: 'Main RN',
+        workload: '10k messages',
+      },
+    ],
+  },
+  {
+    title: 'Runtime apps',
+    items: [
+      {
+        mode: 'home',
+        title: 'Persistence Lab',
+        eyebrow: 'Shared store',
+        description:
+          'Main and threaded runtime update the same persisted counter.',
+        runtime: 'Main + threaded RN',
+        workload: 'Persistent state',
+      },
+      {
+        mode: 'shared-tree',
+        title: 'Shared Tree',
+        eyebrow: 'Shared store',
+        description:
+          'A tree changes color on main RN and mirrors in threaded RN.',
+        runtime: 'Main + threaded RN',
+        workload: 'Subtree updates',
+      },
+      {
+        mode: 'poke-shared',
+        title: 'Poke Shared',
+        eyebrow: 'Fetch + consume',
+        description:
+          'Main runtime fetches pages while threaded runtime consumes them.',
+        runtime: 'Main + threaded RN',
+        workload: 'PokeAPI pages',
+      },
+      {
+        mode: 'threaded-chat-screen',
+        title: 'Chat Screen',
+        eyebrow: 'Threaded screen',
+        description: 'The whole chat screen is mounted on another runtime.',
+        runtime: 'Threaded RN',
+        workload: 'Conversation',
+      },
+      {
+        mode: 'threaded-chat-app',
+        title: 'Chat App',
+        eyebrow: 'Main picker',
+        description:
+          'Main RN chooses a thread and opens the chat on another runtime.',
+        runtime: 'Main + threaded RN',
+        workload: 'Thread picker',
+      },
+    ],
+  },
+];
+const APP_LAUNCH_ITEMS = APP_LAUNCH_SECTIONS.flatMap(section => section.items);
 
 const TREE_COLORS = ['#0F766E', '#7C3AED', '#DC2626', '#2563EB', '#EA580C'];
 const TREE_NODES: Array<{
@@ -297,7 +421,7 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
-  const [mode, setMode] = useState<BenchmarkMode>('home');
+  const [mode, setMode] = useState<NavigationMode>('launcher');
   const [blockStatus, setBlockStatus] = useState('idle');
   const [blockJsEnabled, setBlockJsEnabled] = useState(false);
   const blockJsEnabledRef = useRef(false);
@@ -342,121 +466,240 @@ function AppContent() {
     };
   }, [blockJsEnabled]);
 
+  const activeApp = APP_LAUNCH_ITEMS.find(item => item.mode === mode);
+
   return (
     <View style={[styles.container, {paddingTop: safeAreaInsets.top}]}>
-      <View style={styles.tabs}>
-        <TabButton
-          active={mode === 'home'}
-          id="tab-home"
-          label="Home"
-          onPress={() => setMode('home')}
-        />
-        <TabButton
-          active={mode === 'main'}
-          id="tab-main-rn"
-          label="Native JSX"
-          onPress={() => setMode('main')}
-        />
-        <TabButton
-          active={mode === 'background'}
-          id="tab-second-rn"
-          label="Native 2RN JSX"
-          onPress={() => setMode('background')}
-        />
-        <TabButton
-          active={mode === 'animated'}
-          id="tab-rn-ease"
-          label="RN FlatList"
-          onPress={() => setMode('animated')}
-        />
-        <TabButton
-          active={mode === 'flashlist'}
-          id="tab-flashlist"
-          label="FlashList"
-          onPress={() => setMode('flashlist')}
-        />
-        <TabButton
-          active={mode === 'legendlist'}
-          id="tab-legendlist"
-          label="Legend 2RN"
-          onPress={() => setMode('legendlist')}
-        />
-        <TabButton
-          active={mode === 'legendlist-main'}
-          id="tab-legendlist-main"
-          label="Legend Main"
-          onPress={() => setMode('legendlist-main')}
-        />
-        <TabButton
-          active={mode === 'shared-tree'}
-          id="tab-shared-tree"
-          label="Shared Tree"
-          onPress={() => setMode('shared-tree')}
-        />
-        <TabButton
-          active={mode === 'poke-shared'}
-          id="tab-poke-shared"
-          label="Poke Shared"
-          onPress={() => setMode('poke-shared')}
-        />
-        <TabButton
-          active={mode === 'threaded-chat-screen'}
-          id="tab-threaded-chat-screen"
-          label="Chat Screen"
-          onPress={() => setMode('threaded-chat-screen')}
-        />
-        <TabButton
-          active={mode === 'threaded-chat-app'}
-          id="tab-threaded-chat-app"
-          label="Chat App"
-          onPress={() => setMode('threaded-chat-app')}
-        />
-        <View
-          accessibilityLabel="block-js-control"
-          style={styles.blockSwitch}
-          testID="block-js-control">
-          <Text style={styles.blockSwitchText}>Block JS</Text>
-          <Switch
-            accessibilityLabel="block-js-switch"
-            ios_backgroundColor="#CBD5E1"
-            onValueChange={setBlockJsEnabled}
-            thumbColor="#FFFFFF"
-            testID="block-js-switch"
-            trackColor={{false: '#CBD5E1', true: '#B91C1C'}}
-            value={blockJsEnabled}
-          />
-        </View>
-      </View>
-      {mode === 'home' ? (
-        <HomeRuntimeScreen />
-      ) : mode === 'shared-tree' ? (
-        <SharedTreeRuntimeScreen />
-      ) : mode === 'poke-shared' ? (
-        <PokemonRuntimeScreen />
-      ) : mode === 'threaded-chat-screen' ? (
-        <ThreadedChatScreenSurface blockStatus={blockStatus} />
-      ) : mode === 'threaded-chat-app' ? (
-        <ThreadedChatAppExample blockStatus={blockStatus} />
-      ) : mode === 'animated' || mode === 'legendlist-main' ? (
-        <RnListBenchmarkScreen
-          key={mode}
+      {mode === 'launcher' ? (
+        <HomeLauncherScreen
+          blockJsEnabled={blockJsEnabled}
           blockStatus={blockStatus}
-          mode={mode}
-        />
-      ) : mode === 'flashlist' || mode === 'legendlist' ? (
-        <SecondRuntimeRnListSurface
-          key={mode}
-          blockStatus={blockStatus}
-          mode={mode}
+          onBlockJsChange={setBlockJsEnabled}
+          onOpen={setMode}
         />
       ) : (
-        <ChatBenchmarkScreen
-          key={mode}
-          mode={mode}
-          listName={`${mode}-compose-chat-list`}
-          blockStatus={blockStatus}
-        />
+        <>
+          <AppChromeHeader
+            activeApp={activeApp}
+            blockJsEnabled={blockJsEnabled}
+            blockStatus={blockStatus}
+            onBack={() => setMode('launcher')}
+            onBlockJsChange={setBlockJsEnabled}
+          />
+          <AppRouteContent blockStatus={blockStatus} mode={mode} />
+        </>
       )}
+    </View>
+  );
+}
+
+function AppRouteContent({
+  blockStatus,
+  mode,
+}: {
+  blockStatus: string;
+  mode: BenchmarkMode;
+}) {
+  if (mode === 'home') {
+    return <HomeRuntimeScreen />;
+  }
+
+  if (mode === 'shared-tree') {
+    return <SharedTreeRuntimeScreen />;
+  }
+
+  if (mode === 'poke-shared') {
+    return <PokemonRuntimeScreen />;
+  }
+
+  if (mode === 'threaded-chat-screen') {
+    return <ThreadedChatScreenSurface blockStatus={blockStatus} />;
+  }
+
+  if (mode === 'threaded-chat-app') {
+    return <ThreadedChatAppExample blockStatus={blockStatus} />;
+  }
+
+  if (mode === 'animated' || mode === 'legendlist-main') {
+    return (
+      <RnListBenchmarkScreen
+        key={mode}
+        blockStatus={blockStatus}
+        mode={mode}
+      />
+    );
+  }
+
+  if (mode === 'flashlist' || mode === 'legendlist') {
+    return (
+      <SecondRuntimeRnListSurface
+        key={mode}
+        blockStatus={blockStatus}
+        mode={mode}
+      />
+    );
+  }
+
+  return (
+    <ChatBenchmarkScreen
+      key={mode}
+      mode={mode}
+      listName={`${mode}-compose-chat-list`}
+      blockStatus={blockStatus}
+    />
+  );
+}
+
+function HomeLauncherScreen({
+  blockJsEnabled,
+  blockStatus,
+  onBlockJsChange,
+  onOpen,
+}: {
+  blockJsEnabled: boolean;
+  blockStatus: string;
+  onBlockJsChange: (value: boolean) => void;
+  onOpen: (mode: BenchmarkMode) => void;
+}) {
+  return (
+    <ScrollView
+      accessibilityLabel="home-launcher-screen"
+      contentContainerStyle={styles.launcherContent}
+      style={styles.launcher}
+      testID="home-launcher-screen">
+      <View style={styles.launcherHeader}>
+        <View style={styles.launcherTitleBlock}>
+          <Text style={styles.launcherEyebrow}>Native Compose Chat</Text>
+          <Text style={styles.launcherTitle}>Runtime lab</Text>
+          <Text style={styles.launcherSubtitle}>
+            Open a benchmark, shared-state demo, or threaded screen.
+          </Text>
+        </View>
+        <BlockJsControl
+          blockStatus={blockStatus}
+          onValueChange={onBlockJsChange}
+          value={blockJsEnabled}
+        />
+      </View>
+      {APP_LAUNCH_SECTIONS.map(section => (
+        <View key={section.title} style={styles.launcherSection}>
+          <Text style={styles.launcherSectionTitle}>{section.title}</Text>
+          <View style={styles.launcherGrid}>
+            {section.items.map(item => (
+              <AppLaunchCard
+                item={item}
+                key={item.mode}
+                onPress={() => onOpen(item.mode)}
+              />
+            ))}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+function AppLaunchCard({
+  item,
+  onPress,
+}: {
+  item: AppLaunchItem;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={`open-${item.mode}`}
+      onPress={onPress}
+      style={({pressed}) => [
+        styles.launcherCard,
+        pressed && styles.launcherCardPressed,
+      ]}
+      testID={`open-${item.mode}`}>
+      <View style={styles.launcherCardTop}>
+        <Text style={styles.launcherCardEyebrow}>{item.eyebrow}</Text>
+        <Text style={styles.launcherCardAction}>Open</Text>
+      </View>
+      <Text style={styles.launcherCardTitle}>{item.title}</Text>
+      <Text style={styles.launcherCardDescription}>{item.description}</Text>
+      <View style={styles.launcherCardMeta}>
+        <Text style={styles.launcherMetaText}>{item.runtime}</Text>
+        <Text style={styles.launcherMetaText}>{item.workload}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function AppChromeHeader({
+  activeApp,
+  blockJsEnabled,
+  blockStatus,
+  onBack,
+  onBlockJsChange,
+}: {
+  activeApp?: AppLaunchItem;
+  blockJsEnabled: boolean;
+  blockStatus: string;
+  onBack: () => void;
+  onBlockJsChange: (value: boolean) => void;
+}) {
+  return (
+    <View style={styles.appChrome}>
+      <Pressable
+        accessibilityLabel="back-to-home"
+        onPress={onBack}
+        style={styles.backButton}
+        testID="back-to-home">
+        <Text style={styles.backButtonText}>Back</Text>
+      </Pressable>
+      <View style={styles.appChromeTitleBlock}>
+        <Text numberOfLines={1} style={styles.appChromeTitle}>
+          {activeApp?.title ?? 'Example'}
+        </Text>
+        <Text numberOfLines={1} style={styles.appChromeSubtitle}>
+          {activeApp?.runtime ?? 'Runtime'} / {activeApp?.workload ?? 'demo'}
+        </Text>
+      </View>
+      <BlockJsControl
+        blockStatus={blockStatus}
+        compact
+        onValueChange={onBlockJsChange}
+        value={blockJsEnabled}
+      />
+    </View>
+  );
+}
+
+function BlockJsControl({
+  blockStatus,
+  compact = false,
+  onValueChange,
+  value,
+}: {
+  blockStatus: string;
+  compact?: boolean;
+  onValueChange: (value: boolean) => void;
+  value: boolean;
+}) {
+  return (
+    <View
+      accessibilityLabel="block-js-control"
+      style={[styles.blockSwitch, compact && styles.blockSwitchCompact]}
+      testID="block-js-control">
+      <View style={styles.blockSwitchLabel}>
+        <Text style={styles.blockSwitchText}>Block JS</Text>
+        {!compact ? (
+          <Text style={styles.blockSwitchStatus}>{blockStatus}</Text>
+        ) : null}
+      </View>
+      <Switch
+        accessibilityLabel="block-js-switch"
+        ios_backgroundColor="#CBD5E1"
+        onValueChange={onValueChange}
+        thumbColor="#FFFFFF"
+        testID="block-js-switch"
+        trackColor={{false: '#CBD5E1', true: '#B91C1C'}}
+        value={value}
+      />
     </View>
   );
 }
@@ -2021,30 +2264,6 @@ function spacingStatusForRows(rowLayouts: Map<number, VisibleRowLayout>) {
   return `visible-list-spacing-ok-gap-${Math.round(expectedGap ?? 0)}`;
 }
 
-function TabButton({
-  active,
-  id,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  id: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={id}
-      onPress={onPress}
-      style={[styles.tabButton, active && styles.tabButtonActive]}
-      testID={id}>
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function ActionButton({
   id,
   label,
@@ -2069,6 +2288,149 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F6F7F9',
+  },
+  launcher: {
+    flex: 1,
+  },
+  launcherContent: {
+    paddingBottom: 22,
+  },
+  launcherHeader: {
+    backgroundColor: '#FFFFFF',
+    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  launcherTitleBlock: {
+    gap: 4,
+  },
+  launcherEyebrow: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  launcherTitle: {
+    color: '#111827',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  launcherSubtitle: {
+    color: '#4B5563',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  launcherSection: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  launcherSectionTitle: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  launcherGrid: {
+    gap: 8,
+  },
+  launcherCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 104,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  launcherCardPressed: {
+    backgroundColor: '#F1F5F9',
+  },
+  launcherCardTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  launcherCardEyebrow: {
+    color: '#2563EB',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  launcherCardAction: {
+    color: '#111827',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  launcherCardTitle: {
+    color: '#111827',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  launcherCardDescription: {
+    color: '#4B5563',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  launcherCardMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 8,
+  },
+  launcherMetaText: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: '#1E3A8A',
+    fontSize: 10,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  appChrome: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 58,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  backButton: {
+    alignItems: 'center',
+    backgroundColor: '#111827',
+    borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  appChromeTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  appChromeTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  appChromeSubtitle: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   tabs: {
     alignItems: 'center',
@@ -2104,14 +2466,34 @@ const styles = StyleSheet.create({
   },
   blockSwitch: {
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 8,
-    minHeight: 34,
+    minHeight: 40,
+    paddingHorizontal: 9,
+  },
+  blockSwitchCompact: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    minHeight: 38,
+    paddingHorizontal: 8,
+  },
+  blockSwitchLabel: {
+    gap: 1,
   },
   blockSwitchText: {
     color: '#111827',
     fontSize: 13,
     fontWeight: '700',
+  },
+  blockSwitchStatus: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '600',
   },
   header: {
     backgroundColor: '#FFFFFF',

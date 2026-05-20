@@ -14,7 +14,8 @@ import NativeThreadedRuntimeSurface from './NativeThreadedRuntimeSurface';
 
 const DEFAULT_RUNTIME_NAME = 'background-list';
 const DEFAULT_HOST_APP_NAME = 'ThreadedRuntimeHost';
-const THREADED_SCREEN_STYLE: ViewStyle = {flex: 1};
+const THREADED_SCREEN_STYLE: ViewStyle = { flex: 1 };
+const HEADLESS_TASK_RUNNER_MODULE = 'ThreadedRuntimeHeadlessTaskRunner';
 
 export type ThreadedComponent<Props extends object = Record<string, never>> =
   ComponentType<Props> & {
@@ -25,12 +26,31 @@ export type ThreadedComponent<Props extends object = Record<string, never>> =
 
 type ThreadedComponentLoader = () => ComponentType<any>;
 type ThreadedComponentRegistry = Map<string, ThreadedComponentLoader>;
+export type ThreadedHeadlessTaskContext<Payload> = {
+  payload: Payload;
+  runtimeName: ThreadedRuntimeName;
+  taskName: string;
+};
+export type ThreadedHeadlessTask<Payload = unknown> = (
+  context: ThreadedHeadlessTaskContext<Payload>,
+) => void | Promise<void>;
 
 const threadedComponents: ThreadedComponentRegistry = new Map();
+const threadedHeadlessTasks = new Map<string, ThreadedHeadlessTask<any>>();
 
 type ThreadedRuntimeNativeModule = {
   preloadRuntime?: (runtimeName: string) => Promise<void>;
   prewarmRuntime?: (runtimeName: string) => Promise<void>;
+  runHeadlessTask?: (
+    runtimeName: string,
+    taskName: string,
+    payloadJson: string,
+  ) => Promise<void>;
+  dispatchHeadlessTask?: (
+    runtimeName: string,
+    taskName: string,
+    payloadJson: string,
+  ) => Promise<void>;
   destroyRuntime?: (runtimeName: string) => Promise<void>;
   destroyAllRuntimes?: () => Promise<void>;
   getRuntimeNames?: () => Promise<string[]>;
@@ -42,6 +62,10 @@ const nativeRuntime = (NativeModules.ThreadedRuntime ??
   | undefined;
 
 export type ThreadedRuntimeName = string;
+export type ThreadedHeadlessTaskOptions<Payload = unknown> = {
+  payload?: Payload;
+  runtimeName?: ThreadedRuntimeName;
+};
 
 export type ThreadedProps<Props extends object = Record<string, never>> = {
   accessibilityLabel?: string;
@@ -83,6 +107,13 @@ export function registerLazyThreadedComponent<Props extends object>(
   loadComponent: () => ComponentType<Props>,
 ) {
   threadedComponents.set(name, loadComponent as ThreadedComponentLoader);
+}
+
+export function registerThreadedHeadlessTask<Payload = unknown>(
+  name: string,
+  task: ThreadedHeadlessTask<Payload>,
+) {
+  threadedHeadlessTasks.set(name, task as ThreadedHeadlessTask<any>);
 }
 
 export function threadedComponent<Props extends object>(
@@ -216,6 +247,43 @@ export function ThreadedRuntimeHost({
   return <Component {...initialProps} runtimeName={runtimeName} />;
 }
 
+function runRegisteredHeadlessTask(
+  taskName: string,
+  payloadJson: string,
+  runtimeName: string,
+) {
+  const task = threadedHeadlessTasks.get(taskName);
+  if (!task) {
+    console.warn(`No threaded headless task registered for "${taskName}"`);
+    return;
+  }
+
+  let payload: unknown;
+  try {
+    payload = payloadJson ? JSON.parse(payloadJson) : undefined;
+  } catch (error) {
+    console.warn(
+      `Invalid payload for threaded headless task "${taskName}"`,
+      error,
+    );
+    payload = undefined;
+  }
+
+  try {
+    void Promise.resolve(
+      task({
+        payload,
+        runtimeName,
+        taskName,
+      }),
+    ).catch(error => {
+      console.warn(`Threaded headless task "${taskName}" failed`, error);
+    });
+  } catch (error) {
+    console.warn(`Threaded headless task "${taskName}" failed`, error);
+  }
+}
+
 function prewarmRuntime(
   runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME,
 ) {
@@ -238,6 +306,28 @@ export const ThreadedRuntime = {
 
   prewarm(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
     return prewarmRuntime(runtimeName);
+  },
+
+  runHeadlessTask<Payload = unknown>(
+    taskName: string,
+    options: ThreadedHeadlessTaskOptions<Payload> = {},
+  ) {
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
+      return Promise.resolve();
+    }
+
+    const runtimeName = options.runtimeName ?? DEFAULT_RUNTIME_NAME;
+    const payloadJson = JSON.stringify(options.payload ?? null);
+    const nativeDispatch =
+      nativeRuntime?.dispatchHeadlessTask ?? nativeRuntime?.runHeadlessTask;
+    if (!nativeDispatch) {
+      return Promise.reject(
+        new Error(
+          'ThreadedRuntime native module does not support headless tasks',
+        ),
+      );
+    }
+    return nativeDispatch(runtimeName, taskName, payloadJson);
   },
 
   destroy(runtimeName: ThreadedRuntimeName = DEFAULT_RUNTIME_NAME) {
@@ -263,3 +353,13 @@ export const ThreadedRuntime = {
     );
   },
 };
+
+const registerCallableModule =
+  require('react-native/Libraries/Core/registerCallableModule').default as (
+    name: string,
+    moduleOrFactory: object | (() => object),
+  ) => void;
+
+registerCallableModule(HEADLESS_TASK_RUNNER_MODULE, () => ({
+  run: runRegisteredHeadlessTask,
+}));

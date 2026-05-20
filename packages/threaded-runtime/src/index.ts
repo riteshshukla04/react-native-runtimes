@@ -1,5 +1,6 @@
 export {
   registerLazyThreadedComponent,
+  registerThreadedHeadlessTask,
   registerThreadedComponent,
   threadedComponent,
   Threaded,
@@ -7,6 +8,9 @@ export {
   ThreadedRuntime,
   ThreadedRuntimeHost,
   ThreadedScreen,
+  type ThreadedHeadlessTaskContext,
+  type ThreadedHeadlessTask,
+  type ThreadedHeadlessTaskOptions,
   type ThreadedComponent,
   type ThreadedProps,
   type ThreadedReactSurfaceProps,

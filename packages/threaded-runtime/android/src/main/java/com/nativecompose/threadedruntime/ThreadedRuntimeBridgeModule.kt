@@ -28,6 +28,36 @@ class ThreadedRuntimeBridgeModule(private val reactContext: ReactApplicationCont
   }
 
   @ReactMethod
+  fun runHeadlessTask(
+      runtimeName: String?,
+      taskName: String,
+      payloadJson: String?,
+      promise: Promise,
+  ) {
+    try {
+      ThreadedRuntime.runHeadlessTask(
+          reactContext,
+          runtimeName.orDefaultRuntimeName(),
+          taskName,
+          payloadJson ?: "null",
+      )
+      promise.resolve(null)
+    } catch (error: Throwable) {
+      promise.reject("ERR_THREADED_RUNTIME_HEADLESS_TASK", error)
+    }
+  }
+
+  @ReactMethod
+  fun dispatchHeadlessTask(
+      runtimeName: String?,
+      taskName: String,
+      payloadJson: String?,
+      promise: Promise,
+  ) {
+    runHeadlessTask(runtimeName, taskName, payloadJson, promise)
+  }
+
+  @ReactMethod
   fun destroyRuntime(runtimeName: String?, promise: Promise) {
     try {
       ThreadedRuntime.destroyRuntime(runtimeName.orDefaultRuntimeName())

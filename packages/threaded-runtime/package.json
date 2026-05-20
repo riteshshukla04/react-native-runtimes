@@ -7,6 +7,7 @@
   "react-native": "src/index.ts",
   "files": [
     "android",
+    "cpp",
     "ios",
     "metro.d.ts",
     "metro.js",

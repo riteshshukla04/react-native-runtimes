@@ -12,9 +12,10 @@ The package owns the JS registry and host API:
   `@native-compose/threaded-runtime/metro`
 - `registerLazyThreadedComponent(name, loadComponent)`
 - `registerThreadedComponent(name, Component)`
+- `registerThreadedHeadlessTask(name, task)`
 - `ThreadedReactSurface`
 - `ThreadedRuntimeHost`
-- `ThreadedRuntime.prewarm/preload/destroy/destroyAll/getRuntimeNames`
+- `ThreadedRuntime.prewarm/preload/runHeadlessTask/destroy/destroyAll/getRuntimeNames`
 
 ## Setup
 
@@ -23,8 +24,10 @@ The package owns the JS registry and host API:
 Add the Metro wrapper from this package to your app's `metro.config.js`:
 
 ```js
-const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
-const {withThreadedRuntime} = require('@native-compose/threaded-runtime/metro');
+const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const {
+  withThreadedRuntime,
+} = require('@native-compose/threaded-runtime/metro');
 
 const config = {};
 
@@ -62,7 +65,7 @@ The generated entry registers lazy component loaders and the
 `ThreadedRuntimeHost` root:
 
 ```js
-import {AppRegistry} from 'react-native';
+import { AppRegistry } from 'react-native';
 import {
   ThreadedRuntimeHost,
   registerLazyThreadedComponent,
@@ -105,7 +108,7 @@ export const MessageList = threadedComponent<MessageListProps>(
 
 <Threaded
   component={MessageList}
-  props={{conversationId, initialIndex: 120}}
+  props={{ conversationId, initialIndex: 120 }}
   runtimeName="messages-runtime"
 />;
 ```
@@ -129,7 +132,7 @@ export const ConversationScreen = threadedComponent<ConversationScreenProps>(
 
 <ThreadedScreen
   component={ConversationScreen}
-  props={{conversationId}}
+  props={{ conversationId }}
   runtimeName={`conversation-${conversationId}`}
   testID="conversation-threaded-screen"
 />;
@@ -143,13 +146,124 @@ secondary runtime immediately.
 You can also prewarm the runtime before rendering the screen:
 
 ```tsx
-import {ThreadedRuntime} from '@native-compose/threaded-runtime';
+import { ThreadedRuntime } from '@native-compose/threaded-runtime';
 
 await ThreadedRuntime.prewarm(`conversation-${conversationId}`);
 ```
 
 `prewarm` creates and starts the named secondary runtime without mounting a
 surface. `preload` is kept as a compatibility alias.
+
+## Headless Work On A Threaded Runtime
+
+Prewarming starts the secondary runtime and loads the bundle, but it does not
+give you a clear app-level API for background work. Use headless tasks when you
+want to run JS on a named threaded runtime without mounting a view.
+
+Register the task in a module that is loaded by the threaded bundle. If you use
+the Metro wrapper, exporting this registration from one of the scanned roots is
+enough because `.threaded-runtime/entry` is loaded in the secondary runtime.
+
+```tsx
+import { registerThreadedHeadlessTask } from '@native-compose/threaded-runtime';
+import { messagesStore } from './messagesStore';
+
+registerThreadedHeadlessTask<{
+  conversationId: string;
+  limit: number;
+}>('hydrateConversation', async ({ payload, runtimeName }) => {
+  const messages = await loadMessages(payload.conversationId, payload.limit);
+  await messagesStore.setSubtreeState(payload.conversationId, messages, true);
+  console.info(`Hydrated ${payload.conversationId} on ${runtimeName}`);
+});
+```
+
+Dispatch it from the main runtime:
+
+```tsx
+import { ThreadedRuntime } from '@native-compose/threaded-runtime';
+
+await ThreadedRuntime.runHeadlessTask('hydrateConversation', {
+  runtimeName: 'conversation-worker-runtime',
+  payload: {
+    conversationId,
+    limit: 50,
+  },
+});
+```
+
+`runHeadlessTask` starts or reuses the named runtime and asks that runtime to
+invoke the registered task. If the runtime is still starting, native queues the
+task and flushes it when that runtime is ready. The returned promise resolves
+when native accepts the dispatch; it does not wait for the async task body to
+finish. Pass durable output through shared native state, storage, or native
+modules.
+
+Headless tasks are useful for:
+
+- warming shared stores before a threaded screen opens
+- fetching or decoding data away from the main JS runtime
+- running reducer/store work in a long-lived runtime
+- keeping a runtime hot without attaching a `Threaded` surface
+
+If you only need to make startup faster, `ThreadedRuntime.prewarm(runtimeName)`
+is still enough. Use `runHeadlessTask` when you need actual JS work to execute.
+
+## Native Headless Dispatch
+
+Native code can dispatch the same registered headless tasks. The caller chooses
+which named runtime handles the task. If that runtime has been prewarmed but is
+not ready yet, the dispatch is queued and flushed after startup. If it has not
+been created yet, native creates and starts it.
+
+Kotlin:
+
+```kotlin
+import com.nativecompose.threadedruntime.ThreadedRuntime
+
+ThreadedRuntime.dispatchHeadlessTask(
+  context = applicationContext,
+  runtimeName = "conversation-worker-runtime",
+  taskName = "hydrateConversation",
+  payloadJson = """{"conversationId":"inbox","limit":50}""",
+)
+```
+
+Swift:
+
+```swift
+import NativeComposeThreadedRuntime
+
+ThreadedRuntime.dispatchHeadlessTask(
+  withRuntimeName: "conversation-worker-runtime",
+  taskName: "hydrateConversation",
+  payloadJson: #"{"conversationId":"inbox","limit":50}"#
+)
+```
+
+C++ on Android:
+
+```cpp
+#include <nativecompose/threadedruntime/ThreadedRuntimeDispatcher.h>
+
+nativecompose::threadedruntime::dispatchHeadlessTask(
+    env,
+    applicationContext,
+    "conversation-worker-runtime",
+    "hydrateConversation",
+    R"({"conversationId":"inbox","limit":50})");
+```
+
+C++/Objective-C++ on Apple platforms:
+
+```cpp
+#include <nativecompose/threadedruntime/ThreadedRuntimeDispatcher.h>
+
+nativecompose::threadedruntime::dispatchHeadlessTask(
+    "conversation-worker-runtime",
+    "hydrateConversation",
+    R"({"conversationId":"inbox","limit":50})");
+```
 
 Generator rules:
 
@@ -165,7 +279,9 @@ Generator rules:
 The Metro helper is exported from the package as:
 
 ```js
-const {withThreadedRuntime} = require('@native-compose/threaded-runtime/metro');
+const {
+  withThreadedRuntime,
+} = require('@native-compose/threaded-runtime/metro');
 ```
 
 In same-bundle mode the generated lazy registry avoids eagerly initializing
@@ -181,9 +297,9 @@ code must not mount the main app by itself. This is useful when you are not usin
 the Metro generated registry.
 
 ```tsx
-import {registerThreadedComponent} from '@native-compose/threaded-runtime';
+import { registerThreadedComponent } from '@native-compose/threaded-runtime';
 
-function ExpensivePanel({runtimeName}: {runtimeName?: string}) {
+function ExpensivePanel({ runtimeName }: { runtimeName?: string }) {
   return <Panel title={runtimeName ?? 'threaded'} />;
 }
 
@@ -193,13 +309,13 @@ registerThreadedComponent('ExpensivePanel', ExpensivePanel);
 ## Mount A Threaded Surface
 
 ```tsx
-import {ThreadedReactSurface} from '@native-compose/threaded-runtime';
+import { ThreadedReactSurface } from '@native-compose/threaded-runtime';
 
 <ThreadedReactSurface
   componentName="ExpensivePanel"
-  initialProps={{mode: 'compare'}}
+  initialProps={{ mode: 'compare' }}
   runtimeName="analytics-runtime"
-  style={{flex: 1}}
+  style={{ flex: 1 }}
   surfaceKey="analytics-panel"
 />;
 ```
@@ -215,7 +331,7 @@ register `ThreadedRuntimeHost` under the same app name that native uses when it
 creates a surface:
 
 ```js
-const {AppRegistry} = require('react-native');
+const { AppRegistry } = require('react-native');
 
 if (global._is_it_a_list_env === true) {
   require('./App'); // component registrations
@@ -244,6 +360,8 @@ The native module exposes:
 
 - `prewarmRuntime(runtimeName)`
 - `preloadRuntime(runtimeName)`
+- `dispatchHeadlessTask(runtimeName, taskName, payloadJson)`
+- `runHeadlessTask(runtimeName, taskName, payloadJson)`
 - `destroyRuntime(runtimeName)`
 - `destroyAllRuntimes()`
 - `getRuntimeNames()`

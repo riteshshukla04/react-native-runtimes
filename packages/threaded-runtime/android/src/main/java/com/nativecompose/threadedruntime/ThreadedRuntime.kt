@@ -7,6 +7,8 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.JSBundleLoader
 import com.facebook.react.bridge.JSBundleLoaderDelegate
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.NativeArray
 import com.facebook.react.common.LifecycleState
 import com.facebook.react.common.annotations.FrameworkAPI
 import com.facebook.react.common.annotations.UnstableReactNativeAPI
@@ -21,13 +23,29 @@ import com.facebook.react.runtime.hermes.HermesInstance
 import com.facebook.react.shell.MainReactPackage
 import com.facebook.react.uimanager.ThemedReactContext
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 object ThreadedRuntime {
   const val DEFAULT_RUNTIME_NAME = "background-list"
   const val DEFAULT_HOST_APP_NAME = "ThreadedRuntimeHost"
+  private const val HEADLESS_TASK_RUNNER_MODULE = "ThreadedRuntimeHeadlessTaskRunner"
   private const val LOG_TAG = "ThreadedRuntime"
 
+  private data class HeadlessTaskRequest(
+      val taskName: String,
+      val payloadJson: String,
+  )
+
+  private val lock = Any()
   private val hosts = mutableMapOf<String, ReactHost>()
+  private val pendingHeadlessTasks = mutableMapOf<String, MutableList<HeadlessTaskRequest>>()
+  private val startingRuntimes = mutableSetOf<String>()
+  private val startedRuntimes = mutableSetOf<String>()
+  private val dispatchExecutor =
+      Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "ThreadedRuntimeDispatch").apply { isDaemon = true }
+      }
   private var extraReactPackagesProvider: (() -> List<ReactPackage>)? = null
 
   @JvmStatic
@@ -50,24 +68,61 @@ object ThreadedRuntime {
   @JvmOverloads
   @JvmStatic
   fun prewarmRuntime(context: Context, runtimeName: String = DEFAULT_RUNTIME_NAME) {
-    val normalizedRuntimeName = runtimeName.ifBlank { DEFAULT_RUNTIME_NAME }
-    val didReuseHost = hosts.containsKey(normalizedRuntimeName)
-    ensureHost(context.applicationContext, null, normalizedRuntimeName).start()
+    val normalizedRuntimeName = runtimeName.orDefaultRuntimeName()
+    val didReuseHost = synchronized(lock) { hosts.containsKey(normalizedRuntimeName) }
+    val host = ensureHost(context.applicationContext, null, normalizedRuntimeName)
+    startRuntimeAndFlush(normalizedRuntimeName, host)
     Log.i(
         LOG_TAG,
         "runtime prewarm runtimeName=$normalizedRuntimeName " +
-            "reused=$didReuseHost active=${hosts.keys}")
+            "reused=$didReuseHost active=${runtimeNames()}")
   }
 
   fun destroyRuntime(runtimeName: String) {
-    hosts.remove(runtimeName)?.destroy("destroyRuntime($runtimeName)", null)
+    val normalizedRuntimeName = runtimeName.orDefaultRuntimeName()
+    val host =
+        synchronized(lock) {
+          pendingHeadlessTasks.remove(normalizedRuntimeName)
+          startingRuntimes.remove(normalizedRuntimeName)
+          startedRuntimes.remove(normalizedRuntimeName)
+          hosts.remove(normalizedRuntimeName)
+        }
+    host?.destroy("destroyRuntime($normalizedRuntimeName)", null)
+  }
+
+  @JvmStatic
+  fun runHeadlessTask(
+      context: Context,
+      runtimeName: String,
+      taskName: String,
+      payloadJson: String,
+  ) = dispatchHeadlessTask(context, runtimeName, taskName, payloadJson)
+
+  @JvmStatic
+  fun dispatchHeadlessTask(
+      context: Context,
+      runtimeName: String?,
+      taskName: String,
+      payloadJson: String?,
+  ) {
+    val normalizedRuntimeName = runtimeName.orDefaultRuntimeName()
+    val host = ensureHost(context.applicationContext, null, normalizedRuntimeName)
+    synchronized(lock) {
+      pendingHeadlessTasks
+          .getOrPut(normalizedRuntimeName) { mutableListOf() }
+          .add(HeadlessTaskRequest(taskName, payloadJson ?: "null"))
+    }
+    startRuntimeAndFlush(normalizedRuntimeName, host)
+    Log.i(
+        LOG_TAG,
+        "headless task queued runtimeName=$normalizedRuntimeName taskName=$taskName")
   }
 
   fun destroyAllRuntimes() {
-    hosts.keys.toList().forEach { destroyRuntime(it) }
+    runtimeNames().forEach { destroyRuntime(it) }
   }
 
-  fun runtimeNames(): List<String> = hosts.keys.toList()
+  fun runtimeNames(): List<String> = synchronized(lock) { hosts.keys.toList() }
 
   @OptIn(UnstableReactNativeAPI::class, FrameworkAPI::class)
   private fun ensureHost(
@@ -75,7 +130,7 @@ object ThreadedRuntime {
       activity: Activity?,
       runtimeName: String,
   ): ReactHost {
-    hosts[runtimeName]?.let {
+    synchronized(lock) { hosts[runtimeName] }?.let {
       resumeHost(it, activity)
       return it
     }
@@ -104,7 +159,93 @@ object ThreadedRuntime {
 
     resumeHost(nextHost, activity)
 
-    return nextHost.also { hosts[runtimeName] = it }
+    synchronized(lock) { hosts[runtimeName] = nextHost }
+    return nextHost
+  }
+
+  private fun startRuntimeAndFlush(runtimeName: String, host: ReactHost) {
+    val shouldStart =
+        synchronized(lock) {
+          if (startedRuntimes.contains(runtimeName)) {
+            false
+          } else {
+            startingRuntimes.add(runtimeName)
+          }
+        }
+
+    if (!shouldStart) {
+      flushHeadlessTasks(runtimeName, host)
+      return
+    }
+
+    dispatchExecutor.execute {
+      try {
+        val startTask = host.start()
+        startTask.waitForCompletion(30, TimeUnit.SECONDS)
+        startTask.getError()?.let { throw it }
+        synchronized(lock) {
+          startingRuntimes.remove(runtimeName)
+          startedRuntimes.add(runtimeName)
+        }
+        flushHeadlessTasks(runtimeName, host)
+      } catch (error: Throwable) {
+        synchronized(lock) { startingRuntimes.remove(runtimeName) }
+        Log.e(LOG_TAG, "runtime start failed runtimeName=$runtimeName", error)
+      }
+    }
+  }
+
+  private fun flushHeadlessTasks(runtimeName: String, host: ReactHost) {
+    val requests =
+        synchronized(lock) {
+          if (!startedRuntimes.contains(runtimeName)) {
+            return
+          }
+          pendingHeadlessTasks.remove(runtimeName)?.toList().orEmpty()
+        }
+    if (requests.isEmpty()) {
+      return
+    }
+
+    dispatchExecutor.execute {
+      requests.forEach { request ->
+        try {
+          invokeHeadlessTask(host, runtimeName, request)
+        } catch (error: Throwable) {
+          Log.e(
+              LOG_TAG,
+              "headless task dispatch failed runtimeName=$runtimeName taskName=${request.taskName}",
+              error,
+          )
+        }
+      }
+    }
+  }
+
+  private fun invokeHeadlessTask(
+      host: ReactHost,
+      runtimeName: String,
+      request: HeadlessTaskRequest,
+  ) {
+    val args =
+        Arguments.fromJavaArgs(arrayOf(request.taskName, request.payloadJson, runtimeName))
+            as NativeArray
+    val method =
+        host.javaClass.getDeclaredMethod(
+            "callFunctionOnModule",
+            String::class.java,
+            String::class.java,
+            NativeArray::class.java,
+        )
+    method.isAccessible = true
+    val callTask =
+        method.invoke(host, HEADLESS_TASK_RUNNER_MODULE, "run", args)
+            as? com.facebook.react.interfaces.TaskInterface<*>
+    callTask?.waitForCompletion(5, TimeUnit.SECONDS)
+    callTask?.getError()?.let { throw it }
+    Log.i(
+        LOG_TAG,
+        "headless task dispatched runtimeName=$runtimeName taskName=${request.taskName}")
   }
 
   private fun resumeHost(host: ReactHost, activity: Activity?) {
@@ -122,6 +263,9 @@ object ThreadedRuntime {
 
   private fun isAppDebuggable(context: Context): Boolean =
       (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+  private fun String?.orDefaultRuntimeName(): String =
+      this?.takeIf { it.isNotBlank() } ?: DEFAULT_RUNTIME_NAME
 }
 
 private class ThreadedRuntimeBundleLoader(
