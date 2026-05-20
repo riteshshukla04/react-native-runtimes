@@ -3,10 +3,11 @@
 Small native-backed Zustand-style store for React Native runtimes that do not
 share a JS heap.
 
-The package includes its Android native module. It stores serialized state in a
-process-wide C++ singleton. The main runtime and any secondary React runtime
-register the same native module, so either side can read or update the same
-store by name.
+The package includes Android and iOS native code. Serialized state is stored in
+a process-wide C++ singleton and exposed through a Nitro HybridObject for
+synchronous reads and commits from every React runtime. The classic React Native
+module remains as a small event/promise shim so runtimes can be notified after
+another runtime commits.
 
 ```ts
 import {createSharedStore} from '@native-compose/threaded-zustand';
@@ -85,12 +86,14 @@ committed to the process-wide singleton.
 
 - State is serialized as JSON at the native boundary.
 - Native storage is a C++ singleton keyed by store name and subtree key.
+- JS uses the Nitro `SharedZustandStore` HybridObject when it is available and
+  falls back to the classic `SharedZustandStore` native module.
 - Each subtree has its own state payload, revision, and lock.
 - Each React runtime receives `SharedZustandStoreChanged` native events.
 - Reducers currently run in the JS runtime that calls `dispatch`.
 - Subtree reducers are serialized per subtree by the caller today; the native
   state commits do not lock unrelated subtrees.
-- Persisted subtrees are stored in native platform storage and restored during
+- Persisted subtrees are stored as native JSON files and restored during
   hydration before initial state is used.
 
 ## Setup
@@ -98,7 +101,13 @@ committed to the process-wide singleton.
 Install the package and let React Native autolink it:
 
 ```sh
-npm install @native-compose/threaded-zustand
+npm install @native-compose/threaded-zustand react-native-nitro-modules
+```
+
+On iOS, run CocoaPods after install:
+
+```sh
+cd ios && pod install
 ```
 
 For manually wired secondary runtimes, include `ThreadedZustandPackage` in the
@@ -114,7 +123,18 @@ ThreadedRuntime.setExtraReactPackagesProvider {
 
 ## Native contract
 
-The JS package expects a native module named `SharedZustandStore` with:
+The fast path expects a Nitro HybridObject named `SharedZustandStore` with:
+
+- `getState(storeName, subtreeKey)`
+- `getOrInitState(storeName, subtreeKey, initialJson, persistKey)`
+- `setState(storeName, subtreeKey, stateJson)`
+- `getRevision(storeName, subtreeKey)`
+- `clear(storeName, subtreeKey)`
+- `setPersistedState(persistKey, stateJson)`
+- `clearPersistedState(persistKey)`
+
+The JS package also expects a classic native module named `SharedZustandStore`
+for event broadcast and as a fallback:
 
 - `getState(storeName)`
 - `getOrInitState(storeName, initialJson, persistKey)`
@@ -128,9 +148,10 @@ The JS package expects a native module named `SharedZustandStore` with:
 - `clearSubtree(storeName, subtreeKey, source)`
 - `setPersistedState(persistKey, stateJson)`
 - `clearPersistedState(persistKey)`
+- `notifyChanged(storeName, subtreeKey, stateJson, revision, source)`
 
 The module emits `SharedZustandStoreChanged` to every active React runtime
-after commits. Android is implemented inside this package. iOS is still pending.
+after commits. Android and iOS are implemented inside this package.
 
 The next architectural step is a reducer runtime: a non-UI Hermes runtime that
 loads the app bundle, registers reducers, receives native actions, and commits

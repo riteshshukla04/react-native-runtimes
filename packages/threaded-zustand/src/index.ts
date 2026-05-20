@@ -1,5 +1,6 @@
 import {useSyncExternalStore} from 'react';
 import {NativeEventEmitter, NativeModules} from 'react-native';
+import {NitroModules, type HybridObject} from 'react-native-nitro-modules';
 
 const ROOT_SUBTREE_KEY = '__root__';
 
@@ -44,6 +45,31 @@ type NativeSharedZustandStore = {
   ): Promise<number>;
   setPersistedState?: (persistKey: string, stateJson: string) => Promise<void>;
   clearPersistedState?: (persistKey: string) => Promise<void>;
+  notifyChanged?: (
+    storeName: string,
+    subtreeKey: string,
+    stateJson: string | null,
+    revision: number,
+    source: string | null,
+  ) => Promise<void>;
+};
+
+type NitroSharedZustandStore = HybridObject<{
+  android: 'c++';
+  ios: 'c++';
+}> & {
+  getState(storeName: string, subtreeKey: string): string | null;
+  getOrInitState(
+    storeName: string,
+    subtreeKey: string,
+    initialJson: string,
+    persistKey: string,
+  ): string;
+  setState(storeName: string, subtreeKey: string, stateJson: string): number;
+  getRevision(storeName: string, subtreeKey: string): number;
+  clear(storeName: string, subtreeKey: string): number;
+  setPersistedState(persistKey: string, stateJson: string): void;
+  clearPersistedState(persistKey: string): void;
 };
 
 type NativeChangeEvent = {
@@ -140,6 +166,26 @@ const eventEmitter = nativeStore
   ? new NativeEventEmitter(nativeStore as any)
   : null;
 const runtimeSourceId = `runtime-${Math.random().toString(36).slice(2)}`;
+let cachedNitroStore: NitroSharedZustandStore | null | undefined;
+
+function getNitroStore(): NitroSharedZustandStore | null {
+  if (cachedNitroStore !== undefined) {
+    return cachedNitroStore;
+  }
+
+  try {
+    cachedNitroStore = NitroModules.hasHybridObject('SharedZustandStore')
+      ? NitroModules.createHybridObject<NitroSharedZustandStore>(
+          'SharedZustandStore',
+        )
+      : null;
+  } catch (error) {
+    cachedNitroStore = null;
+    console.warn('[threaded-zustand] Nitro store unavailable', error);
+  }
+
+  return cachedNitroStore;
+}
 
 function requireNativeStore(): NativeSharedZustandStore {
   if (!nativeStore) {
@@ -304,7 +350,15 @@ export function createSharedStore<TState, TAction = unknown>({
 
   async function persistSubtreeState(subtreeKey: string, stateJson: string) {
     const persistKey = persistedSubtrees.get(subtreeKey);
-    if (!persistKey || !nativeStore?.setPersistedState) {
+    if (!persistKey) {
+      return;
+    }
+    const nitroStore = getNitroStore();
+    if (nitroStore) {
+      nitroStore.setPersistedState(persistKey, stateJson);
+      return;
+    }
+    if (!nativeStore?.setPersistedState) {
       return;
     }
     await nativeStore.setPersistedState(persistKey, stateJson);
@@ -312,16 +366,41 @@ export function createSharedStore<TState, TAction = unknown>({
 
   async function clearPersistedSubtreeState(subtreeKey: string) {
     const persistKey = persistedSubtrees.get(subtreeKey);
-    if (!persistKey || !nativeStore?.clearPersistedState) {
+    if (!persistKey) {
+      return;
+    }
+    const nitroStore = getNitroStore();
+    if (nitroStore) {
+      nitroStore.clearPersistedState(persistKey);
+      return;
+    }
+    if (!nativeStore?.clearPersistedState) {
       return;
     }
     await nativeStore.clearPersistedState(persistKey);
+  }
+
+  async function notifyNativeChange(
+    subtreeKey: string,
+    stateJson: string | null,
+    revision: number,
+  ) {
+    await nativeStore?.notifyChanged?.(
+      name,
+      subtreeKey,
+      stateJson,
+      revision,
+      sourceId,
+    );
   }
 
   const subscription = eventEmitter?.addListener(
     'SharedZustandStoreChanged',
     (event: NativeChangeEvent) => {
       if (event.storeName !== name) {
+        return;
+      }
+      if (event.source === sourceId) {
         return;
       }
       const subtreeKey = event.subtreeKey ?? ROOT_SUBTREE_KEY;
@@ -336,8 +415,21 @@ export function createSharedStore<TState, TAction = unknown>({
 
   async function hydrateSubtree(subtreeKey: string) {
     const store = requireNativeStore();
+    const nitroStore = getNitroStore();
     const initialJson = initialJsonForSubtree(subtreeKey);
     const persistKey = persistedSubtrees.get(subtreeKey) ?? null;
+
+    if (nitroStore) {
+      const stateJson = nitroStore.getOrInitState(
+        name,
+        subtreeKey,
+        initialJson,
+        persistKey ?? '',
+      );
+      const revision = nitroStore.getRevision(name, subtreeKey);
+      publishJsonState(subtreeKey, stateJson, revision);
+      return;
+    }
 
     if (
       (subtreeKey === ROOT_SUBTREE_KEY && store.getOrInitState) ||
@@ -404,12 +496,14 @@ export function createSharedStore<TState, TAction = unknown>({
       const nextState = resolveNextState(currentState, partial, replace);
       if (!usesSubtrees) {
         const stateJson = stringifyState(nextState);
-        const revision = await requireNativeStore().setState(
-          name,
-          stateJson,
-          sourceId,
-        );
+        const nitroStore = getNitroStore();
+        const revision = nitroStore
+          ? nitroStore.setState(name, ROOT_SUBTREE_KEY, stateJson)
+          : await requireNativeStore().setState(name, stateJson, sourceId);
         await persistSubtreeState(ROOT_SUBTREE_KEY, stateJson);
+        if (nitroStore) {
+          await notifyNativeChange(ROOT_SUBTREE_KEY, stateJson, revision);
+        }
         publish(nextState, ROOT_SUBTREE_KEY, revision);
         return revision;
       }
@@ -456,13 +550,19 @@ export function createSharedStore<TState, TAction = unknown>({
         replace,
       );
       const stateJson = stringifyState(nextSubtreeState);
-      const revision = await requireNativeStore().setSubtreeState(
-        name,
-        subtreeKey,
-        stateJson,
-        sourceId,
-      );
+      const nitroStore = getNitroStore();
+      const revision = nitroStore
+        ? nitroStore.setState(name, subtreeKey, stateJson)
+        : await requireNativeStore().setSubtreeState(
+            name,
+            subtreeKey,
+            stateJson,
+            sourceId,
+          );
       await persistSubtreeState(subtreeKey, stateJson);
+      if (nitroStore) {
+        await notifyNativeChange(subtreeKey, stateJson, revision);
+      }
       publish(patchSubtree(subtreeKey, nextSubtreeState), subtreeKey, revision);
       return revision;
     },
@@ -495,19 +595,27 @@ export function createSharedStore<TState, TAction = unknown>({
     },
     async clear(subtreeKey) {
       if (subtreeKey != null) {
-        const revision = await requireNativeStore().clearSubtree(
-          name,
-          subtreeKey,
-          sourceId,
-        );
+        const nitroStore = getNitroStore();
+        const revision = nitroStore
+          ? nitroStore.clear(name, subtreeKey)
+          : await requireNativeStore().clearSubtree(name, subtreeKey, sourceId);
         await clearPersistedSubtreeState(subtreeKey);
+        if (nitroStore) {
+          await notifyNativeChange(subtreeKey, null, revision);
+        }
         publish(patchSubtree(subtreeKey, initialSubtree(subtreeKey)), subtreeKey, revision);
         return revision;
       }
 
       if (!usesSubtrees) {
-        const revision = await requireNativeStore().clear(name, sourceId);
+        const nitroStore = getNitroStore();
+        const revision = nitroStore
+          ? nitroStore.clear(name, ROOT_SUBTREE_KEY)
+          : await requireNativeStore().clear(name, sourceId);
         await clearPersistedSubtreeState(ROOT_SUBTREE_KEY);
+        if (nitroStore) {
+          await notifyNativeChange(ROOT_SUBTREE_KEY, null, revision);
+        }
         publish(initialState, ROOT_SUBTREE_KEY, revision);
         return revision;
       }

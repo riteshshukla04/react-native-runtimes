@@ -1,5 +1,10 @@
 #include "SharedZustandStore.h"
 
+#include <cctype>
+#include <fstream>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <utility>
 
 namespace facebook::react {
@@ -53,11 +58,15 @@ SharedZustandStore::Snapshot SharedZustandStore::setState(
 SharedZustandStore::Snapshot SharedZustandStore::getOrInitState(
     const std::string& storeName,
     const std::string& subtreeKey,
-    std::string initialJson) {
+    std::string initialJson,
+    const std::optional<std::string>& persistKey) {
   auto entry = getOrCreateEntry(storeName, subtreeKey);
   std::lock_guard<std::mutex> lock(entry->mutex);
   if (!entry->hasState) {
-    entry->stateJson = std::move(initialJson);
+    entry->stateJson =
+        persistKey.has_value()
+            ? getPersistedState(*persistKey).value_or(std::move(initialJson))
+            : std::move(initialJson);
     entry->revision += 1;
     entry->hasState = true;
   }
@@ -98,6 +107,84 @@ int SharedZustandStore::clear(
   entry->revision += 1;
   entry->hasState = false;
   return entry->revision;
+}
+
+void SharedZustandStore::setPersistenceDirectory(std::string directory) {
+  std::lock_guard<std::mutex> lock(persistenceMutex_);
+  persistenceDirectory_ = std::move(directory);
+  if (!persistenceDirectory_.empty()) {
+    mkdir(persistenceDirectory_.c_str(), 0700);
+  }
+}
+
+void SharedZustandStore::setPersistedState(
+    const std::string& persistKey,
+    const std::string& stateJson) {
+  if (persistKey.empty()) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(persistenceMutex_);
+  const auto path = persistencePathForKey(persistKey);
+  if (path.empty()) {
+    return;
+  }
+
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output << stateJson;
+}
+
+void SharedZustandStore::clearPersistedState(const std::string& persistKey) {
+  if (persistKey.empty()) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(persistenceMutex_);
+  const auto path = persistencePathForKey(persistKey);
+  if (!path.empty()) {
+    std::remove(path.c_str());
+  }
+}
+
+std::optional<std::string> SharedZustandStore::getPersistedState(
+    const std::string& persistKey) {
+  if (persistKey.empty()) {
+    return std::nullopt;
+  }
+
+  std::lock_guard<std::mutex> lock(persistenceMutex_);
+  const auto path = persistencePathForKey(persistKey);
+  if (path.empty()) {
+    return std::nullopt;
+  }
+
+  std::ifstream input(path, std::ios::binary);
+  if (!input.good()) {
+    return std::nullopt;
+  }
+
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  return buffer.str();
+}
+
+std::string SharedZustandStore::persistencePathForKey(
+    const std::string& persistKey) {
+  if (persistenceDirectory_.empty()) {
+    return "";
+  }
+
+  std::string safeKey;
+  safeKey.reserve(persistKey.size());
+  for (const auto character : persistKey) {
+    const auto byte = static_cast<unsigned char>(character);
+    safeKey.push_back(
+        std::isalnum(byte) || character == '.' || character == '_' ||
+                character == '-'
+            ? character
+            : '_');
+  }
+  return persistenceDirectory_ + "/" + safeKey + ".json";
 }
 
 } // namespace facebook::react

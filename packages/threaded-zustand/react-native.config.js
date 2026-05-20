@@ -6,7 +6,7 @@ module.exports = {
           'import com.nativecompose.threadedzustand.ThreadedZustandPackage;',
         packageInstance: 'new ThreadedZustandPackage()',
       },
-      ios: null,
+      ios: {},
     },
   },
 };

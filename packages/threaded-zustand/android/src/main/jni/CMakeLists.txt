@@ -5,6 +5,7 @@ project(native-compose-threaded-zustand)
 
 find_package(fbjni REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)
+find_package(react-native-nitro-modules REQUIRED CONFIG)
 
 add_library(
   native-compose-threaded-zustand
@@ -12,6 +13,7 @@ add_library(
   OnLoad.cpp
   SharedZustandStore.cpp
   SharedZustandStoreJni.cpp
+  SharedZustandNitroStore.cpp
 )
 
 target_include_directories(
@@ -24,12 +26,16 @@ if (REACTNATIVE_MERGED_SO)
   target_link_libraries(
     native-compose-threaded-zustand
     fbjni::fbjni
+    ReactAndroid::jsi
     ReactAndroid::reactnative
+    react-native-nitro-modules::NitroModules
   )
 else()
   target_link_libraries(
     native-compose-threaded-zustand
     fbjni::fbjni
+    ReactAndroid::jsi
+    react-native-nitro-modules::NitroModules
   )
 endif()
 

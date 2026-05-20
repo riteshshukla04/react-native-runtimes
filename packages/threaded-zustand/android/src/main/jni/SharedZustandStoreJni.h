@@ -21,7 +21,8 @@ class SharedZustandStoreJni : public jni::JavaClass<SharedZustandStoreJni> {
       jni::alias_ref<SharedZustandStoreJni> jobj,
       jni::alias_ref<jstring> storeName,
       jni::alias_ref<jstring> subtreeKey,
-      jni::alias_ref<jstring> initialJson);
+      jni::alias_ref<jstring> initialJson,
+      jni::alias_ref<jstring> persistKey);
 
   static jint nativeSetState(
       jni::alias_ref<SharedZustandStoreJni> jobj,
@@ -38,6 +39,19 @@ class SharedZustandStoreJni : public jni::JavaClass<SharedZustandStoreJni> {
       jni::alias_ref<SharedZustandStoreJni> jobj,
       jni::alias_ref<jstring> storeName,
       jni::alias_ref<jstring> subtreeKey);
+
+  static void nativeSetPersistenceDirectory(
+      jni::alias_ref<SharedZustandStoreJni> jobj,
+      jni::alias_ref<jstring> directory);
+
+  static void nativeSetPersistedState(
+      jni::alias_ref<SharedZustandStoreJni> jobj,
+      jni::alias_ref<jstring> persistKey,
+      jni::alias_ref<jstring> stateJson);
+
+  static void nativeClearPersistedState(
+      jni::alias_ref<SharedZustandStoreJni> jobj,
+      jni::alias_ref<jstring> persistKey);
 };
 
 } // namespace facebook::react

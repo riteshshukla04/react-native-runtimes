@@ -2,6 +2,8 @@
 
 #include "SharedZustandStore.h"
 
+#include <optional>
+
 namespace facebook::react {
 
 void SharedZustandStoreJni::registerNatives() {
@@ -14,6 +16,15 @@ void SharedZustandStoreJni::registerNatives() {
       makeNativeMethod(
           "nativeGetRevision", SharedZustandStoreJni::nativeGetRevision),
       makeNativeMethod("nativeClear", SharedZustandStoreJni::nativeClear),
+      makeNativeMethod(
+          "nativeSetPersistenceDirectory",
+          SharedZustandStoreJni::nativeSetPersistenceDirectory),
+      makeNativeMethod(
+          "nativeSetPersistedState",
+          SharedZustandStoreJni::nativeSetPersistedState),
+      makeNativeMethod(
+          "nativeClearPersistedState",
+          SharedZustandStoreJni::nativeClearPersistedState),
   });
 }
 
@@ -33,11 +44,17 @@ jni::local_ref<jstring> SharedZustandStoreJni::nativeGetOrInitState(
     jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
     jni::alias_ref<jstring> storeName,
     jni::alias_ref<jstring> subtreeKey,
-    jni::alias_ref<jstring> initialJson) {
+    jni::alias_ref<jstring> initialJson,
+    jni::alias_ref<jstring> persistKey) {
+  std::optional<std::string> nativePersistKey;
+  if (persistKey != nullptr) {
+    nativePersistKey = persistKey->toStdString();
+  }
   const auto entry = SharedZustandStore::instance().getOrInitState(
       storeName->toStdString(),
       subtreeKey->toStdString(),
-      initialJson->toStdString());
+      initialJson->toStdString(),
+      nativePersistKey);
   return jni::make_jstring(entry.stateJson);
 }
 
@@ -67,6 +84,27 @@ jint SharedZustandStoreJni::nativeClear(
     jni::alias_ref<jstring> subtreeKey) {
   return SharedZustandStore::instance().clear(
       storeName->toStdString(), subtreeKey->toStdString());
+}
+
+void SharedZustandStoreJni::nativeSetPersistenceDirectory(
+    jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
+    jni::alias_ref<jstring> directory) {
+  SharedZustandStore::instance().setPersistenceDirectory(
+      directory->toStdString());
+}
+
+void SharedZustandStoreJni::nativeSetPersistedState(
+    jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
+    jni::alias_ref<jstring> persistKey,
+    jni::alias_ref<jstring> stateJson) {
+  SharedZustandStore::instance().setPersistedState(
+      persistKey->toStdString(), stateJson->toStdString());
+}
+
+void SharedZustandStoreJni::nativeClearPersistedState(
+    jni::alias_ref<SharedZustandStoreJni> /*jobj*/,
+    jni::alias_ref<jstring> persistKey) {
+  SharedZustandStore::instance().clearPersistedState(persistKey->toStdString());
 }
 
 } // namespace facebook::react

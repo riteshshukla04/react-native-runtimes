@@ -3,6 +3,7 @@
 #import <React/RCTConvert.h>
 #import <React/RCTLog.h>
 #import <React/RCTUtils.h>
+#import <React-RCTAppDelegate/RCTAppSetupUtils.h>
 #import <React-RCTAppDelegate/RCTReactNativeFactory.h>
 #import <ReactCommon/RCTHost.h>
 #import <react/runtime/JSRuntimeFactory.h>
@@ -73,6 +74,70 @@ static NSString *const ThreadedRuntimeDefaultHostAppName = @"ThreadedRuntimeHost
 
 @end
 
+@interface ThreadedRuntimeTurboModuleDelegate : NSObject <RCTTurboModuleManagerDelegate>
+
+- (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate;
+
+@end
+
+@implementation ThreadedRuntimeTurboModuleDelegate {
+  __weak id<RCTReactNativeFactoryDelegate> _delegate;
+}
+
+- (instancetype)initWithDelegate:(id<RCTReactNativeFactoryDelegate>)delegate
+{
+  if (self = [super init]) {
+    _delegate = delegate;
+  }
+  return self;
+}
+
+- (Class)getModuleClassFromName:(const char *)name
+{
+  if ([_delegate respondsToSelector:@selector(getModuleClassFromName:)]) {
+    return [_delegate getModuleClassFromName:name];
+  }
+  return nullptr;
+}
+
+- (id<RCTTurboModule>)getModuleInstanceFromClass:(Class)moduleClass
+{
+  if ([_delegate respondsToSelector:@selector(getModuleInstanceFromClass:)]) {
+    id<RCTTurboModule> module = [_delegate getModuleInstanceFromClass:moduleClass];
+    if (module != nil) {
+      return module;
+    }
+  }
+  return RCTAppSetupDefaultModuleFromClass(moduleClass, _delegate.dependencyProvider);
+}
+
+- (id<RCTModuleProvider>)getModuleProvider:(const char *)name
+{
+  if ([_delegate respondsToSelector:@selector(getModuleProvider:)]) {
+    return [_delegate getModuleProvider:name];
+  }
+  return nil;
+}
+
+- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:(const std::string &)name
+                                                      jsInvoker:(std::shared_ptr<facebook::react::CallInvoker>)jsInvoker
+{
+  if ([_delegate respondsToSelector:@selector(getTurboModule:jsInvoker:)]) {
+    return [_delegate getTurboModule:name jsInvoker:jsInvoker];
+  }
+  return nullptr;
+}
+
+- (NSArray<id<RCTBridgeModule>> *)extraModulesForBridge:(RCTBridge *)bridge
+{
+  if ([_delegate respondsToSelector:@selector(extraModulesForBridge:)]) {
+    return [_delegate extraModulesForBridge:bridge];
+  }
+  return @[];
+}
+
+@end
+
 @implementation ThreadedRuntime
 
 RCT_EXPORT_MODULE()
@@ -90,6 +155,16 @@ static NSMutableDictionary<NSString *, RCTHost *> *ThreadedRuntimeHosts()
 static NSMutableDictionary<NSString *, ThreadedRuntimeHostDelegate *> *ThreadedRuntimeHostDelegates()
 {
   static NSMutableDictionary<NSString *, ThreadedRuntimeHostDelegate *> *delegates;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    delegates = [NSMutableDictionary new];
+  });
+  return delegates;
+}
+
+static NSMutableDictionary<NSString *, ThreadedRuntimeTurboModuleDelegate *> *ThreadedRuntimeTurboModuleDelegates()
+{
+  static NSMutableDictionary<NSString *, ThreadedRuntimeTurboModuleDelegate *> *delegates;
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     delegates = [NSMutableDictionary new];
@@ -134,6 +209,7 @@ static NSDictionary *configuredLaunchOptions;
   NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
   [ThreadedRuntimeHosts() removeObjectForKey:normalizedRuntimeName];
   [ThreadedRuntimeHostDelegates() removeObjectForKey:normalizedRuntimeName];
+  [ThreadedRuntimeTurboModuleDelegates() removeObjectForKey:normalizedRuntimeName];
   NSLog(@"[ThreadedRuntime] runtime destroy runtimeName=%@", normalizedRuntimeName);
   RCTLogInfo(@"[ThreadedRuntime] runtime destroy runtimeName=%@", normalizedRuntimeName);
 }
@@ -142,6 +218,7 @@ static NSDictionary *configuredLaunchOptions;
 {
   [ThreadedRuntimeHosts() removeAllObjects];
   [ThreadedRuntimeHostDelegates() removeAllObjects];
+  [ThreadedRuntimeTurboModuleDelegates() removeAllObjects];
   NSLog(@"[ThreadedRuntime] runtime destroyAll");
   RCTLogInfo(@"[ThreadedRuntime] runtime destroyAll");
 }
@@ -175,12 +252,14 @@ static NSDictionary *configuredLaunchOptions;
 
   ThreadedRuntimeHostDelegate *hostDelegate =
       [[ThreadedRuntimeHostDelegate alloc] initWithDelegate:delegate runtimeName:runtimeName];
+  ThreadedRuntimeTurboModuleDelegate *turboModuleDelegate =
+      [[ThreadedRuntimeTurboModuleDelegate alloc] initWithDelegate:delegate];
   __weak id<RCTReactNativeFactoryDelegate> weakDelegate = delegate;
   RCTHost *host = [[RCTHost alloc] initWithBundleURLProvider:^NSURL *_Nullable {
     return [weakDelegate bundleURL];
   }
                                       hostDelegate:hostDelegate
-                        turboModuleManagerDelegate:delegate
+                        turboModuleManagerDelegate:turboModuleDelegate
                                   jsEngineProvider:^std::shared_ptr<facebook::react::JSRuntimeFactory>() {
                                     JSRuntimeFactoryRef factory = [weakDelegate createJSRuntimeFactory];
                                     return std::shared_ptr<facebook::react::JSRuntimeFactory>(
@@ -191,6 +270,7 @@ static NSDictionary *configuredLaunchOptions;
 
   ThreadedRuntimeHosts()[runtimeName] = host;
   ThreadedRuntimeHostDelegates()[runtimeName] = hostDelegate;
+  ThreadedRuntimeTurboModuleDelegates()[runtimeName] = turboModuleDelegate;
   return host;
 }
 

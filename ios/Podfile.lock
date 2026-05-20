@@ -65,6 +65,64 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - NativeComposeThreadedZustand (0.0.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
+  - NitroModules (0.35.7):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -2661,6 +2719,8 @@ DEPENDENCIES:
   - glog (from `../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - "NativeComposeThreadedRuntime (from `../node_modules/@native-compose/threaded-runtime`)"
+  - "NativeComposeThreadedZustand (from `../node_modules/@native-compose/threaded-zustand`)"
+  - NitroModules (from `../node_modules/react-native-nitro-modules`)
   - RCT-Folly (from `../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -2761,6 +2821,10 @@ EXTERNAL SOURCES:
     :tag: hermes-v250829098.0.13
   NativeComposeThreadedRuntime:
     :path: "../node_modules/@native-compose/threaded-runtime"
+  NativeComposeThreadedZustand:
+    :path: "../node_modules/@native-compose/threaded-zustand"
+  NitroModules:
+    :path: "../node_modules/react-native-nitro-modules"
   RCT-Folly:
     :podspec: "../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec"
   RCTDeprecation:
@@ -2918,6 +2982,8 @@ SPEC CHECKSUMS:
   glog: e56ede4028c4b7418e6b1195a36b1656bb35e225
   hermes-engine: 43c943d0666cb69dae917d718c86232890369673
   NativeComposeThreadedRuntime: 6cf055d0804aea411993582f8d02f6e9d5937530
+  NativeComposeThreadedZustand: 7e092cb4a9a29746493a23f479fc5682c3da0c9f
+  NitroModules: 9ec4a2e0b9af22ba1f1f550e1dd9be94143afd18
   RCT-Folly: 36c4f904fb6cd0219dcb76b94e9502d2a72fab0b
   RCTDeprecation: 749d12090a553c96992e2b521dc286f6783ea991
   RCTRequired: acb6c8ceb4535fb8f84f798bb3338c43c5467143
@@ -2988,7 +3054,7 @@ SPEC CHECKSUMS:
   React-viewtransitionnativemodule: a6ba21f85379423dbee53acca9305320e70681cd
   React-webperformancenativemodule: 9a68d58fab7407ae4b00c9da69fe48e923c02219
   ReactAppDependencyProvider: 43c8afa3c7a753e9ae311c5f05885175378ae682
-  ReactCodegen: e15a31c52ebceff9ac9f51fc42128c076decacc1
+  ReactCodegen: 59d033958f398e66173e9818325fcd6ccb283a53
   ReactCommon: db370c51fb3d9a145824d21cbea2fdf642599b23
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 26523efe2ee463c5d13a02dd6140ec06fe60a9ca
