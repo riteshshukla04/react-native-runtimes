@@ -159,6 +159,15 @@ const CHAT_THREADS: ChatThreadSummary[] = [
   },
 ];
 const DEFAULT_CHAT_THREAD = CHAT_THREADS[0];
+
+function chatThreadRuntimeName(threadId: string) {
+  return `chat-thread-${threadId}-runtime`;
+}
+
+const CHAT_THREAD_RUNTIME_NAMES = CHAT_THREADS.map(thread =>
+  chatThreadRuntimeName(thread.id),
+);
+
 const APP_LAUNCH_SECTIONS: AppLaunchSection[] = [
   {
     title: 'Native chat lists',
@@ -891,6 +900,21 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
   const selectedThread =
     CHAT_THREADS.find(thread => thread.id === selectedThreadId) ?? null;
 
+  useEffect(() => {
+    if (selectedThreadId != null) {
+      return;
+    }
+
+    for (const runtimeName of CHAT_THREAD_RUNTIME_NAMES) {
+      void ThreadedRuntime.prewarm(runtimeName);
+    }
+  }, [selectedThreadId]);
+
+  const openThread = useCallback((threadId: string) => {
+    void ThreadedRuntime.prewarm(chatThreadRuntimeName(threadId));
+    setSelectedThreadId(threadId);
+  }, []);
+
   if (selectedThread) {
     return (
       <View
@@ -920,7 +944,7 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
             threadId: selectedThread.id,
             threadTitle: selectedThread.title,
           }}
-          runtimeName={`chat-thread-${selectedThread.id}-runtime`}
+          runtimeName={chatThreadRuntimeName(selectedThread.id)}
           style={styles.threadedScreenSurface}
           surfaceKey={`chat-thread-${selectedThread.id}`}
           testID={`threaded-chat-app-screen-${selectedThread.id}`}
@@ -946,7 +970,7 @@ function ThreadedChatAppExample({blockStatus}: {blockStatus: string}) {
           <Pressable
             accessibilityLabel={`open-chat-thread-${thread.id}`}
             key={thread.id}
-            onPress={() => setSelectedThreadId(thread.id)}
+            onPress={() => openThread(thread.id)}
             style={styles.threadRow}
             testID={`open-chat-thread-${thread.id}`}>
             <View style={styles.threadRowText}>
@@ -1045,25 +1069,45 @@ function ThreadedChatScreenContent({
     );
   }, [itemCount, runtimeName, threadId]);
 
-  function publishState() {
+  const publishState = useCallback(() => {
     setDataVersion(source.version);
     setItemCount(source.count);
-  }
+  }, [source]);
 
-  function addReply() {
+  const addReply = useCallback(() => {
     const id = `${threadId}-${nextIdRef.current++}`;
     source.addAtIndex(0, createRandomMessage(id, nextIdRef.current));
     publishState();
-  }
+  }, [publishState, source, threadId]);
 
-  function editLatest() {
+  const editLatest = useCallback(() => {
     source.updateItem(0, {
       body: `Threaded screen edit v${
         source.version + 1
       }. ${threadTitle} is running in ${runtimeName ?? runtimeKind()}.`,
     });
     publishState();
-  }
+  }, [publishState, runtimeName, source, threadTitle]);
+
+  const renderThreadedChatRow = useCallback<ListRenderItem<RenderedChatItem>>(
+    ({item}) => (
+      <ChatBubble
+        item={item}
+        onReaction={reaction => {
+          source.toggleReaction(item.index, reaction);
+          publishState();
+        }}
+        reactionPrefix="threaded-screen-reaction"
+        rowPrefix="threaded-screen-row"
+      />
+    ),
+    [publishState, source],
+  );
+
+  const keyExtractor = useCallback(
+    (item: RenderedChatItem) => `${item.id}:${item.renderVersion}`,
+    [],
+  );
 
   return (
     <View
@@ -1091,24 +1135,20 @@ function ThreadedChatScreenContent({
           />
         </View>
       </View>
-      <ScrollView
+      <FlatList
         accessibilityLabel="threaded-chat-screen-scroll"
         contentContainerStyle={styles.threadedChatContent}
+        data={rows}
+        initialNumToRender={8}
+        keyExtractor={keyExtractor}
+        maxToRenderPerBatch={6}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={renderThreadedChatRow}
         style={styles.list}
-        testID="threaded-chat-screen-scroll">
-        {rows.map(item => (
-          <ChatBubble
-            key={`${item.id}:${item.renderVersion}`}
-            item={item}
-            onReaction={reaction => {
-              source.toggleReaction(item.index, reaction);
-              publishState();
-            }}
-            reactionPrefix="threaded-screen-reaction"
-            rowPrefix="threaded-screen-row"
-          />
-        ))}
-      </ScrollView>
+        testID="threaded-chat-screen-scroll"
+        updateCellsBatchingPeriod={16}
+        windowSize={5}
+      />
     </View>
   );
 }
