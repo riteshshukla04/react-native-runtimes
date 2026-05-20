@@ -1,6 +1,6 @@
-# NativeComposeChat
+# react-native-runtimes
 
-React Native 0.86 new-architecture benchmark app for multi-runtime rendering,
+React Native 0.86 new-architecture playground for multi-runtime rendering,
 shared state, and list baselines.
 
 The app exercises:
