@@ -238,6 +238,16 @@ static NSMutableSet<NSString *> *ThreadedRuntimeStartedRuntimeNames()
   return runtimeNames;
 }
 
+static dispatch_queue_t ThreadedRuntimeQueue()
+{
+  static dispatch_queue_t queue;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    queue = dispatch_queue_create("native-compose.threaded-runtime.prewarm", DISPATCH_QUEUE_SERIAL);
+  });
+  return queue;
+}
+
 static id<RCTReactNativeFactoryDelegate> configuredDelegate;
 static NSDictionary *configuredLaunchOptions;
 
@@ -266,21 +276,27 @@ static NSDictionary *configuredLaunchOptions;
   NSString *normalizedKind = [self normalizeRuntimeKind:kind];
   [self configureRuntimeKind:normalizedKind runtimeName:normalizedRuntimeName];
   (void)useMainNativeModules;
-  BOOL reused = ThreadedRuntimeHosts()[normalizedRuntimeName] != nil;
-  RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
-  [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
-  NSLog(
-      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
-      normalizedRuntimeName,
-      normalizedKind,
-      reused ? @"true" : @"false",
-      ThreadedRuntimeHosts().allKeys);
-  RCTLogInfo(
-      @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
-      normalizedRuntimeName,
-      normalizedKind,
-      reused ? @"true" : @"false",
-      ThreadedRuntimeHosts().allKeys);
+  BOOL reused = NO;
+  @synchronized(self) {
+    reused = ThreadedRuntimeHosts()[normalizedRuntimeName] != nil;
+  }
+  dispatch_async(ThreadedRuntimeQueue(), ^{
+    RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
+    [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
+    NSArray<NSString *> *activeRuntimeNames = [self runtimeNames];
+    NSLog(
+        @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
+        normalizedRuntimeName,
+        normalizedKind,
+        reused ? @"true" : @"false",
+        activeRuntimeNames);
+    RCTLogInfo(
+        @"[ThreadedRuntime] runtime prewarm runtimeName=%@ kind=%@ useMainNativeModules=true reused=%@ active=%@",
+        normalizedRuntimeName,
+        normalizedKind,
+        reused ? @"true" : @"false",
+        activeRuntimeNames);
+  });
 }
 
 + (void)prewarmBusinessRuntime:(NSString *)runtimeName
@@ -295,7 +311,6 @@ static NSDictionary *configuredLaunchOptions;
                                 payloadJson:(NSString *)payloadJson
 {
   NSString *normalizedRuntimeName = [self normalizeRuntimeName:runtimeName];
-  RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
   NSDictionary<NSString *, NSString *> *task = @{
     @"taskName" : taskName ?: @"",
     @"payloadJson" : payloadJson ?: @"null",
@@ -311,7 +326,10 @@ static NSDictionary *configuredLaunchOptions;
     [pending addObject:task];
   }
 
-  [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
+  dispatch_async(ThreadedRuntimeQueue(), ^{
+    RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
+    [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
+  });
   NSLog(
       @"[ThreadedRuntime] headless task queued runtimeName=%@ taskName=%@",
       normalizedRuntimeName,
@@ -362,7 +380,9 @@ static NSDictionary *configuredLaunchOptions;
 
 + (NSArray<NSString *> *)runtimeNames
 {
-  return ThreadedRuntimeHosts().allKeys;
+  @synchronized(self) {
+    return [ThreadedRuntimeHosts().allKeys copy];
+  }
 }
 
 + (RCTFabricSurface *)createSurfaceWithRuntimeName:(NSString *)runtimeName
@@ -450,9 +470,11 @@ static NSDictionary *configuredLaunchOptions;
 
 + (RCTHost *)ensureHostWithRuntimeName:(NSString *)runtimeName
 {
-  RCTHost *existingHost = ThreadedRuntimeHosts()[runtimeName];
-  if (existingHost != nil) {
-    return existingHost;
+  @synchronized(self) {
+    RCTHost *existingHost = ThreadedRuntimeHosts()[runtimeName];
+    if (existingHost != nil) {
+      return existingHost;
+    }
   }
 
   id<RCTReactNativeFactoryDelegate> delegate = configuredDelegate;
@@ -480,10 +502,16 @@ static NSDictionary *configuredLaunchOptions;
                                   }
                                      launchOptions:configuredLaunchOptions];
 
-  ThreadedRuntimeHosts()[runtimeName] = host;
-  ThreadedRuntimeHostDelegates()[runtimeName] = hostDelegate;
-  ThreadedRuntimeTurboModuleDelegates()[runtimeName] = turboModuleDelegate;
-  return host;
+  @synchronized(self) {
+    RCTHost *existingHost = ThreadedRuntimeHosts()[runtimeName];
+    if (existingHost != nil) {
+      return existingHost;
+    }
+    ThreadedRuntimeHosts()[runtimeName] = host;
+    ThreadedRuntimeHostDelegates()[runtimeName] = hostDelegate;
+    ThreadedRuntimeTurboModuleDelegates()[runtimeName] = turboModuleDelegate;
+    return host;
+  }
 }
 
 + (NSString *)normalizeRuntimeName:(NSString *)runtimeName

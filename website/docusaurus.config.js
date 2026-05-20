@@ -4,10 +4,10 @@ const config = {
   title: 'Native Compose Runtimes',
   tagline: 'Run React Native UI and state work across named JS runtimes.',
 
-  url: 'https://native-compose.local',
-  baseUrl: '/',
+  url: 'https://szymon20000.github.io',
+  baseUrl: '/react-native-runtimes/',
 
-  organizationName: 'native-compose',
+  organizationName: 'Szymon20000',
   projectName: 'react-native-runtimes',
 
   onBrokenLinks: 'throw',

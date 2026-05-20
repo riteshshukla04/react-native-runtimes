@@ -106,13 +106,16 @@ object ThreadedRuntime {
         )
     configureRuntimeOptions(normalizedRuntimeName, options)
     val didReuseHost = synchronized(lock) { hosts.containsKey(normalizedRuntimeName) }
-    val host = ensureHost(context.applicationContext, null, normalizedRuntimeName)
-    startRuntimeAndFlush(normalizedRuntimeName, host)
-    Log.i(
-        LOG_TAG,
-        "runtime prewarm runtimeName=$normalizedRuntimeName " +
-            "kind=${options.kind} useMainNativeModules=${options.useMainNativeModules} " +
-            "reused=$didReuseHost active=${runtimeNames()}")
+    val appContext = context.applicationContext
+    dispatchExecutor.execute {
+      val host = ensureHost(appContext, null, normalizedRuntimeName)
+      startRuntimeAndFlush(normalizedRuntimeName, host)
+      Log.i(
+          LOG_TAG,
+          "runtime prewarm runtimeName=$normalizedRuntimeName " +
+              "kind=${options.kind} useMainNativeModules=${options.useMainNativeModules} " +
+              "reused=$didReuseHost active=${runtimeNames()}")
+    }
   }
 
   @JvmOverloads
@@ -159,13 +162,16 @@ object ThreadedRuntime {
       payloadJson: String?,
   ) {
     val normalizedRuntimeName = runtimeName.orDefaultRuntimeName()
-    val host = ensureHost(context.applicationContext, null, normalizedRuntimeName)
+    val appContext = context.applicationContext
     synchronized(lock) {
       pendingHeadlessTasks
           .getOrPut(normalizedRuntimeName) { mutableListOf() }
           .add(HeadlessTaskRequest(taskName, payloadJson ?: "null"))
     }
-    startRuntimeAndFlush(normalizedRuntimeName, host)
+    dispatchExecutor.execute {
+      val host = ensureHost(appContext, null, normalizedRuntimeName)
+      startRuntimeAndFlush(normalizedRuntimeName, host)
+    }
     Log.i(
         LOG_TAG,
         "headless task queued runtimeName=$normalizedRuntimeName taskName=$taskName")

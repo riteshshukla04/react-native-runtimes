@@ -50,6 +50,11 @@ import {
   ThreadedRuntime,
   ThreadedScreen,
 } from '@native-compose/threaded-runtime';
+import {
+  requestTwoRuntimeBusinessSync,
+  startTwoRuntimeBusinessRuntime,
+  twoRuntimeArchitectureStore,
+} from './src/examples/twoRuntimesArchitecture';
 
 type NativeBenchmarkMode = 'main' | 'background';
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
@@ -61,6 +66,7 @@ type SharedRuntimeMode =
   | 'home'
   | 'shared-tree'
   | 'poke-shared'
+  | 'two-runtimes-architecture'
   | 'threaded-chat-screen'
   | 'threaded-chat-app';
 type BenchmarkMode = NativeBenchmarkMode | RnBenchmarkMode | SharedRuntimeMode;
@@ -259,6 +265,15 @@ const APP_LAUNCH_SECTIONS: AppLaunchSection[] = [
         workload: 'PokeAPI pages',
       },
       {
+        mode: 'two-runtimes-architecture',
+        title: '2 Runtimes Architecture',
+        eyebrow: 'Business runtime',
+        description:
+          'Main RN renders immediately while a business runtime keeps shared state fresh.',
+        runtime: 'Main render + business RN',
+        workload: 'Live shared store',
+      },
+      {
         mode: 'threaded-chat-screen',
         title: 'Chat Screen',
         eyebrow: 'Threaded screen',
@@ -436,6 +451,13 @@ function AppContent() {
   const blockJsEnabledRef = useRef(false);
 
   useEffect(() => {
+    void twoRuntimeArchitectureStore.hydrate();
+    void startTwoRuntimeBusinessRuntime('app startup').catch(error => {
+      console.warn('[two-runtimes] failed to start business runtime', error);
+    });
+  }, []);
+
+  useEffect(() => {
     blockJsEnabledRef.current = blockJsEnabled;
 
     if (!blockJsEnabled) {
@@ -519,6 +541,10 @@ function AppRouteContent({
 
   if (mode === 'poke-shared') {
     return <PokemonRuntimeScreen />;
+  }
+
+  if (mode === 'two-runtimes-architecture') {
+    return <TwoRuntimesArchitectureScreen />;
   }
 
   if (mode === 'threaded-chat-screen') {
@@ -875,6 +901,128 @@ export const HomeThreadedPersistenceApp =
       );
     },
   );
+
+function TwoRuntimesArchitectureScreen() {
+  const business = twoRuntimeArchitectureStore.useStore(
+    state => state.business,
+    ['business'],
+  );
+  const metrics = twoRuntimeArchitectureStore.useStore(
+    state => state.metrics,
+    ['metrics'],
+  );
+  const [runtimeNames, setRuntimeNames] = useState<string[]>([]);
+
+  const refreshRuntimeNames = useCallback(() => {
+    ThreadedRuntime.getRuntimeNames()
+      .then(setRuntimeNames)
+      .catch(error => {
+        console.warn('[two-runtimes] failed to read runtime names', error);
+      });
+  }, []);
+
+  const startBusinessRuntime = useCallback(() => {
+    void startTwoRuntimeBusinessRuntime('main RN screen').then(
+      refreshRuntimeNames,
+    );
+  }, [refreshRuntimeNames]);
+
+  const syncNow = useCallback(() => {
+    void requestTwoRuntimeBusinessSync('manual sync from main RN').then(
+      refreshRuntimeNames,
+    );
+  }, [refreshRuntimeNames]);
+
+  const resetStore = useCallback(() => {
+    void Promise.all([
+      twoRuntimeArchitectureStore.clear('metrics'),
+      twoRuntimeArchitectureStore.clear('business'),
+    ]).then(() => startTwoRuntimeBusinessRuntime('main RN reset'));
+  }, []);
+
+  useEffect(() => {
+    void twoRuntimeArchitectureStore.hydrate();
+    startBusinessRuntime();
+  }, [startBusinessRuntime]);
+
+  return (
+    <View
+      accessibilityLabel="two-runtimes-architecture-screen"
+      style={styles.twoRuntimeScreen}
+      testID="two-runtimes-architecture-screen">
+      <View style={styles.header}>
+        <Text style={styles.title}>2 runtimes architecture</Text>
+        <Text style={styles.subtitle}>
+          Main RN renders this screen. A prewarmed business runtime updates the
+          shared zustand store.
+        </Text>
+      </View>
+      <View style={styles.twoRuntimeContent}>
+        <View style={styles.twoRuntimeStatusRow}>
+          <View style={styles.twoRuntimeStatusPanel}>
+            <Text style={styles.sharedTreeRuntime}>main runtime</Text>
+            <Text style={styles.twoRuntimeStatusValue}>rendering only</Text>
+            <Text style={styles.sharedTreeMeta}>
+              screen is interactive before the next business tick
+            </Text>
+          </View>
+          <View style={styles.twoRuntimeStatusPanel}>
+            <Text style={styles.sharedTreeRuntime}>business runtime</Text>
+            <Text style={styles.twoRuntimeStatusValue}>{business.status}</Text>
+            <Text style={styles.sharedTreeMeta}>
+              {business.runtimeName} / tick {business.ticks}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.twoRuntimeDetailPanel}>
+          <Text style={styles.twoRuntimeDetailTitle}>
+            Shared store snapshot
+          </Text>
+          <Text style={styles.twoRuntimeDetailText}>
+            command {business.lastCommand} / latency {business.latencyMs}ms /
+            updated {formatFetchTime(business.lastUpdatedAt)}
+          </Text>
+          <Text style={styles.twoRuntimeDetailText}>
+            active runtimes {runtimeNames.length ? runtimeNames.join(', ') : 'pending'}
+          </Text>
+        </View>
+        <View style={styles.twoRuntimeMetrics}>
+          {metrics.map(metric => (
+            <View key={metric.id} style={styles.twoRuntimeMetricCard}>
+              <Text style={styles.twoRuntimeMetricLabel}>{metric.label}</Text>
+              <Text style={styles.twoRuntimeMetricValue}>{metric.value}%</Text>
+              <Text
+                style={[
+                  styles.twoRuntimeMetricDelta,
+                  metric.delta < 0 && styles.twoRuntimeMetricDeltaDown,
+                ]}>
+                {metric.delta >= 0 ? '+' : ''}
+                {metric.delta} / {formatFetchTime(metric.updatedAt)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.homeFooter}>
+        <ActionButton
+          id="two-runtimes-start-business"
+          label="Start"
+          onPress={startBusinessRuntime}
+        />
+        <ActionButton
+          id="two-runtimes-sync-now"
+          label="Sync"
+          onPress={syncNow}
+        />
+        <ActionButton
+          id="two-runtimes-reset"
+          label="Reset"
+          onPress={resetStore}
+        />
+      </View>
+    </View>
+  );
+}
 
 function ThreadedChatScreenSurface({blockStatus}: {blockStatus: string}) {
   return (
@@ -2195,9 +2343,14 @@ function titleForRnMode(mode: RnBenchmarkMode) {
 }
 
 function runtimeKind() {
+  const globals = globalThis as {
+    __COMPOSE_CHAT_LIST_ENV__?: {kind?: string};
+    __THREADED_RUNTIME_ENV__?: {kind?: string};
+  };
   return (
-    (globalThis as {__COMPOSE_CHAT_LIST_ENV__?: {kind?: string}})
-      .__COMPOSE_CHAT_LIST_ENV__?.kind ?? 'main'
+    globals.__THREADED_RUNTIME_ENV__?.kind ??
+    globals.__COMPOSE_CHAT_LIST_ENV__?.kind ??
+    'main'
   );
 }
 
@@ -2629,6 +2782,84 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
+  },
+  twoRuntimeScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  twoRuntimeContent: {
+    flex: 1,
+    gap: 10,
+    padding: 12,
+  },
+  twoRuntimeStatusRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  twoRuntimeStatusPanel: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minHeight: 112,
+    padding: 12,
+  },
+  twoRuntimeStatusValue: {
+    color: '#111827',
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  twoRuntimeDetailPanel: {
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  twoRuntimeDetailTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  twoRuntimeDetailText: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  twoRuntimeMetrics: {
+    gap: 8,
+  },
+  twoRuntimeMetricCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 86,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  twoRuntimeMetricLabel: {
+    color: '#4B5563',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  twoRuntimeMetricValue: {
+    color: '#0F766E',
+    fontSize: 30,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  twoRuntimeMetricDelta: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  twoRuntimeMetricDeltaDown: {
+    color: '#B91C1C',
   },
   threadedScreenSurface: {
     flex: 1,

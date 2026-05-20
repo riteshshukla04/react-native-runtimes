@@ -26,6 +26,11 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    ThreadedRuntime.setMainReactPackagesProvider {
+      PackageList(this).packages.apply {
+        add(ComposeChatListPackage())
+      }
+    }
     ThreadedRuntime.setExtraReactPackagesProvider {
       listOf(
           BackgroundListRendererPackage(),
@@ -38,6 +43,16 @@ class MainApplication : Application(), ReactApplication {
     ThreadedRuntime.prewarmRuntime(
         applicationContext,
         "chat-thread-release-room-runtime",
+    )
+    ThreadedRuntime.prewarmBusinessRuntime(
+        applicationContext,
+        "two-runtimes-business-runtime",
+    )
+    ThreadedRuntime.dispatchHeadlessTask(
+        applicationContext,
+        "two-runtimes-business-runtime",
+        "twoRuntimes:startBusinessRuntime",
+        "{\"startedBy\":\"android native startup\",\"enqueuedAt\":${System.currentTimeMillis()}}",
     )
   }
 }
