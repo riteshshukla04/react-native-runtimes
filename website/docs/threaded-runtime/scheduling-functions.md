@@ -7,40 +7,34 @@ Use awaitable runtime functions when one runtime needs a return value from code
 executed on another named runtime.
 
 ```tsx
-import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
+import { call, runtimeFunction } from '@react-native-runtimes/core';
 
-function fibonacci(n: number) {
+function fibonacciNumber(n: number) {
   if (n < 2) {
     return n;
   }
 
-  return fibonacci(n - 1) + fibonacci(n - 2);
+  return fibonacciNumber(n - 1) + fibonacciNumber(n - 2);
 }
 
-export const calculateFibonacci = runtimeFunction(
-  ({ n }: { n: number }) => {
-    const input = Math.max(0, Math.min(45, Math.floor(n)));
+export const fibonacci = runtimeFunction((n: number) => {
+  const input = Math.max(0, Math.min(45, Math.floor(n)));
 
-    return {
-      input,
-      result: fibonacci(input),
-      computedAt: new Date().toISOString(),
-    };
-  },
-);
+  return {
+    input,
+    result: fibonacciNumber(input),
+    computedAt: new Date().toISOString(),
+  };
+});
 
-const result = await usingRuntime('fibonacci-worker-runtime').run(() =>
-  calculateFibonacci({ n: 38 }),
-);
+const result = await call(fibonacci).on('fibonacci-worker-runtime')(38);
 ```
 
-The `usingRuntime(...).run(...)` callback is syntax for Metro to transform. It
-is rewritten to a direct call on the registered runtime function:
+The `call(fn).on(runtimeName)(...args)` form is syntax for Metro to transform.
+It is rewritten to a direct call on the registered runtime function:
 
 ```tsx
-const result = await calculateFibonacci.runOn('fibonacci-worker-runtime', {
-  n: 38,
-});
+const result = await fibonacci.runOn('fibonacci-worker-runtime', 38);
 ```
 
 ## Why Wrap With `runtimeFunction`?
@@ -52,7 +46,7 @@ and gives Metro a clear export boundary to register.
 Metro can generate the stable id for this:
 
 ```tsx
-export const calculateFibonacci = runtimeFunction(fn);
+export const fibonacci = runtimeFunction(fn);
 ```
 
 but it still needs to know which exported functions are safe to schedule. Plain
@@ -73,9 +67,8 @@ Runtime functions are not sent as source code. Metro gives each exported
 
 ```tsx
 registerRuntimeFunction(
-  'src/examples/fibonacciRuntimeFunction.calculateFibonacci',
-  () =>
-    require('./src/examples/fibonacciRuntimeFunction').calculateFibonacci,
+  'src/examples/fibonacciRuntimeFunction.fibonacci',
+  () => require('./src/examples/fibonacciRuntimeFunction').fibonacci,
 );
 ```
 
@@ -90,25 +83,31 @@ C++/JSI dispatches to the target runtime, looks up the registered loader,
 caches the loaded JS function, calls it with parsed arguments, and serializes the
 result back to the caller.
 
-## Supported Shape
+## Supported Shapes
 
-The callback passed to `usingRuntime(...).run(...)` must contain exactly one
-call to one exported runtime function:
+The primary shape uses `call(fn).on(runtimeName)(...args)`:
 
 ```tsx
-await usingRuntime('fibonacci-worker-runtime').run(() =>
-  calculateFibonacci({ n: 38 }),
-);
+await call(fibonacci).on('fibonacci-worker-runtime')(38);
+```
+
+The callback form is still supported when you prefer the runtime-first shape.
+The callback must contain exactly one call to one exported runtime function:
+
+```tsx
+import { usingRuntime } from '@react-native-runtimes/core';
+
+await usingRuntime('fibonacci-worker-runtime').run(() => fibonacci(38));
 ```
 
 Use an explicit id when the generated file-path id should not be part of your
 public API:
 
 ```tsx
-export const calculateFibonacci = runtimeFunction.named(
-  'examples.calculateFibonacci',
-  ({ n }: { n: number }) => {
-    return fibonacci(n);
+export const fibonacci = runtimeFunction.named(
+  'examples.fibonacci',
+  (n: number) => {
+    return fibonacciNumber(n);
   },
 );
 ```

@@ -50,10 +50,7 @@ type RuntimeFunctionJsiGlobal = typeof globalThis & {
     id: string,
     loadFunction: RuntimeFunctionLoader,
   ) => void;
-  __rnrCallRuntimeFunction?: (
-    functionId: string,
-    argsJson: string,
-  ) => unknown;
+  __rnrCallRuntimeFunction?: (functionId: string, argsJson: string) => unknown;
 };
 
 type ThreadedRuntimeFunctionsNitro = {
@@ -102,10 +99,7 @@ const nativeRuntime = NativeModules.ThreadedRuntime as
   | ThreadedRuntimeNativeModule
   | undefined;
 
-let runtimeFunctionsNitro:
-  | ThreadedRuntimeFunctionsNitro
-  | null
-  | undefined;
+let runtimeFunctionsNitro: ThreadedRuntimeFunctionsNitro | null | undefined;
 let didWarnRuntimeFunctionsNitroUnavailable = false;
 
 function currentRuntimeName() {
@@ -143,7 +137,10 @@ function getRuntimeFunctionsNitro() {
     runtimeFunctionsNitro = null;
     if (!didWarnRuntimeFunctionsNitroUnavailable) {
       didWarnRuntimeFunctionsNitroUnavailable = true;
-      console.warn('[threaded-runtime] Nitro runtime functions unavailable', error);
+      console.warn(
+        '[threaded-runtime] Nitro runtime functions unavailable',
+        error,
+      );
     }
   }
 
@@ -152,7 +149,10 @@ function getRuntimeFunctionsNitro() {
 
 function installRuntimeFunctionJsi() {
   const globals = globalThis as RuntimeFunctionJsiGlobal;
-  if (globals.__rnrRegisterRuntimeFunction && globals.__rnrCallRuntimeFunction) {
+  if (
+    globals.__rnrRegisterRuntimeFunction &&
+    globals.__rnrCallRuntimeFunction
+  ) {
     return;
   }
 
@@ -189,6 +189,14 @@ export type RuntimeFunction<TFunction extends AnyFunction> = TFunction & {
     runtimeName: ThreadedRuntimeName,
     ...args: Parameters<TFunction>
   ): Promise<Awaited<ReturnType<TFunction>>>;
+};
+
+export type RuntimeFunctionCallBuilder<TFunction extends AnyFunction> = {
+  on(
+    runtimeName: ThreadedRuntimeName,
+  ): (
+    ...args: Parameters<TFunction>
+  ) => Promise<Awaited<ReturnType<TFunction>>>;
 };
 
 export type RuntimeFunctionFactory = {
@@ -289,8 +297,17 @@ createRuntimeFunction.withId = function runtimeFunctionWithId<
 
 createRuntimeFunction.named = createRuntimeFunction.withId;
 
-export const runtimeFunction =
-  createRuntimeFunction as RuntimeFunctionFactory;
+export const runtimeFunction = createRuntimeFunction as RuntimeFunctionFactory;
+
+export function call<TFunction extends AnyFunction>(
+  fn: RuntimeFunction<TFunction>,
+): RuntimeFunctionCallBuilder<TFunction> {
+  return {
+    on(runtimeName) {
+      return (...args) => ThreadedRuntime.run(runtimeName, fn, ...args);
+    },
+  };
+}
 
 export function usingRuntime(runtimeName: ThreadedRuntimeName) {
   return {
@@ -519,7 +536,8 @@ function loadRegisteredRuntimeFunction(functionId: string) {
 
 function callRegisteredRuntimeFunction(functionId: string, argsJson: string) {
   installRuntimeFunctionJsi();
-  const jsiCall = (globalThis as RuntimeFunctionJsiGlobal).__rnrCallRuntimeFunction;
+  const jsiCall = (globalThis as RuntimeFunctionJsiGlobal)
+    .__rnrCallRuntimeFunction;
   if (jsiCall) {
     return jsiCall(functionId, argsJson);
   }
@@ -553,8 +571,11 @@ function completeRuntimeFunctionCall(
 ) {
   const errorJson = error ? JSON.stringify(error) : null;
   return (
-    nativeRuntime?.completeRuntimeFunctionCall?.(callId, resultJson, errorJson) ??
-    Promise.resolve()
+    nativeRuntime?.completeRuntimeFunctionCall?.(
+      callId,
+      resultJson,
+      errorJson,
+    ) ?? Promise.resolve()
   );
 }
 
@@ -738,7 +759,10 @@ function installThreadedRuntimeEventEmitterFallback() {
   const globals = globalThis as {
     __THREADED_RUNTIME_EVENT_EMITTER_FALLBACK__?: boolean;
   };
-  if (Platform.OS !== 'ios' || globals.__THREADED_RUNTIME_EVENT_EMITTER_FALLBACK__) {
+  if (
+    Platform.OS !== 'ios' ||
+    globals.__THREADED_RUNTIME_EVENT_EMITTER_FALLBACK__
+  ) {
     return;
   }
 

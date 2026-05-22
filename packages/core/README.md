@@ -14,6 +14,7 @@ The package owns the JS registry and host API:
 - `registerThreadedComponent(name, Component)`
 - `registerThreadedHeadlessTask(name, task)`
 - `runtimeFunction(fn)`
+- `call(runtimeFunction).on(runtimeName)(...args)`
 - `usingRuntime(runtimeName).run(() => runtimeFunctionCall(...))`
 - `ThreadedReactSurface`
 - `ThreadedRuntimeHost`
@@ -230,40 +231,34 @@ as JSON. This is the request/response API for work that should execute on
 another runtime and return a value to the caller.
 
 ```tsx
-import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
+import { call, runtimeFunction } from '@react-native-runtimes/core';
 
-function fibonacci(n: number) {
+function fibonacciNumber(n: number) {
   if (n < 2) {
     return n;
   }
 
-  return fibonacci(n - 1) + fibonacci(n - 2);
+  return fibonacciNumber(n - 1) + fibonacciNumber(n - 2);
 }
 
-export const calculateFibonacci = runtimeFunction(
-  ({ n }: { n: number }) => {
-    const input = Math.max(0, Math.min(45, Math.floor(n)));
+export const fibonacci = runtimeFunction((n: number) => {
+  const input = Math.max(0, Math.min(45, Math.floor(n)));
 
-    return {
-      input,
-      result: fibonacci(input),
-      computedAt: new Date().toISOString(),
-    };
-  },
-);
+  return {
+    input,
+    result: fibonacciNumber(input),
+    computedAt: new Date().toISOString(),
+  };
+});
 
-const result = await usingRuntime('fibonacci-worker-runtime').run(() =>
-  calculateFibonacci({ n: 38 }),
-);
+const result = await call(fibonacci).on('fibonacci-worker-runtime')(38);
 ```
 
-The callback is compile-time syntax. The Metro transformer rewrites it before
-the app runs:
+The `call(fn).on(runtimeName)(...args)` form is compile-time syntax. The Metro
+transformer rewrites it before the app runs:
 
 ```tsx
-await calculateFibonacci.runOn('fibonacci-worker-runtime', {
-  n: 38,
-});
+await fibonacci.runOn('fibonacci-worker-runtime', 38);
 ```
 
 `runtimeFunction` marks a function as callable from another runtime. It attaches
@@ -280,9 +275,8 @@ export name, then generates a registration that looks like this:
 
 ```tsx
 registerRuntimeFunction(
-  'src/examples/fibonacciRuntimeFunction.calculateFibonacci',
-  () =>
-    require('./src/examples/fibonacciRuntimeFunction').calculateFibonacci,
+  'src/examples/fibonacciRuntimeFunction.fibonacci',
+  () => require('./src/examples/fibonacciRuntimeFunction').fibonacci,
 );
 ```
 
@@ -291,23 +285,29 @@ JSON arguments to C++/JSI. The target runtime looks up the registered loader,
 caches the loaded function, parses the JSON arguments, calls the function, then
 serializes the returned value back to the caller.
 
-The callback passed to `usingRuntime(...).run(...)` must contain exactly one
-call to one exported runtime function:
+The `call(...).on(...)` helper accepts one exported runtime function and forwards
+the arguments to that function on the target runtime:
 
 ```tsx
-await usingRuntime('fibonacci-worker-runtime').run(() =>
-  calculateFibonacci({ n: 38 }),
-);
+await call(fibonacci).on('fibonacci-worker-runtime')(38);
+```
+
+The callback form is still supported when you prefer the runtime-first shape:
+
+```tsx
+import { usingRuntime } from '@react-native-runtimes/core';
+
+await usingRuntime('fibonacci-worker-runtime').run(() => fibonacci(38));
 ```
 
 For explicit stable ids, use `runtimeFunction.named` or
 `runtimeFunction.withId`:
 
 ```tsx
-export const calculateFibonacci = runtimeFunction.named(
-  'examples.calculateFibonacci',
-  ({ n }: { n: number }) => {
-    return fibonacci(n);
+export const fibonacci = runtimeFunction.named(
+  'examples.fibonacci',
+  (n: number) => {
+    return fibonacciNumber(n);
   },
 );
 ```

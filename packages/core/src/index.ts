@@ -1,4 +1,5 @@
 export {
+  call,
   registerLazyThreadedComponent,
   registerRuntimeFunction,
   registerThreadedHeadlessTask,
@@ -20,6 +21,7 @@ export {
   type ThreadedRuntimeName,
   type ThreadedScreenProps,
   type RuntimeFunction,
+  type RuntimeFunctionCallBuilder,
   type RuntimeFunctionFactory,
   type RuntimeFunctionMetadata,
 } from './ThreadedRuntime';

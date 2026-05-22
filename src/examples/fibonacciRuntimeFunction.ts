@@ -1,9 +1,5 @@
 import { runtimeFunction } from '@react-native-runtimes/core';
 
-export type FibonacciRequest = {
-  n: number;
-};
-
 export type FibonacciResult = {
   input: number;
   result: number;
@@ -25,7 +21,7 @@ function runtimeInfo() {
   };
 }
 
-function fibonacci(n: number) {
+function fibonacciNumber(n: number) {
   if (n < 2) {
     return n;
   }
@@ -40,14 +36,12 @@ function fibonacci(n: number) {
   return current;
 }
 
-export const calculateFibonacci = runtimeFunction(
-  async ({ n }: FibonacciRequest): Promise<FibonacciResult> => {
-    const normalizedInput = Math.max(0, Math.min(45, Math.floor(n)));
-    return {
-      input: normalizedInput,
-      result: fibonacci(normalizedInput),
-      ...runtimeInfo(),
-      computedAt: new Date().toISOString(),
-    };
-  },
-);
+export const fibonacci = runtimeFunction((n: number): FibonacciResult => {
+  const normalizedInput = Math.max(0, Math.min(45, Math.floor(n)));
+  return {
+    input: normalizedInput,
+    result: fibonacciNumber(normalizedInput),
+    ...runtimeInfo(),
+    computedAt: new Date().toISOString(),
+  };
+});

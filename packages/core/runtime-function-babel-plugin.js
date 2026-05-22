@@ -51,7 +51,11 @@ function shouldTransformFile(filename, projectRoot) {
     return true;
   }
   const relativePath = path.relative(path.resolve(projectRoot), filename);
-  return relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+  return (
+    relativePath &&
+    !relativePath.startsWith('..') &&
+    !path.isAbsolute(relativePath)
+  );
 }
 
 function extractRuntimeCall(node) {
@@ -94,12 +98,60 @@ function extractCallbackCall(callbackNode) {
   return extractRuntimeCall(statement.argument);
 }
 
+function extractCallOnRuntimeCall(node) {
+  if (!node || node.type !== 'CallExpression') {
+    return null;
+  }
+
+  const onCall = node.callee;
+  if (onCall.type !== 'CallExpression') {
+    return null;
+  }
+
+  const onCallee = onCall.callee;
+  if (
+    onCallee.type !== 'MemberExpression' ||
+    onCallee.computed ||
+    onCallee.property.type !== 'Identifier' ||
+    onCallee.property.name !== 'on'
+  ) {
+    return null;
+  }
+
+  const callExpression = onCallee.object;
+  if (
+    callExpression.type !== 'CallExpression' ||
+    callExpression.callee.type !== 'Identifier' ||
+    callExpression.callee.name !== 'call'
+  ) {
+    return null;
+  }
+
+  const scheduledFunction = callExpression.arguments[0];
+  const runtimeArg = onCall.arguments[0];
+  if (!scheduledFunction || !runtimeArg) {
+    return null;
+  }
+
+  if (scheduledFunction.type !== 'Identifier') {
+    return null;
+  }
+
+  return {
+    scheduledFunction,
+    runtimeArg,
+    args: node.arguments,
+  };
+}
+
 module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
   return {
     name: '@react-native-runtimes/runtime-function',
     visitor: {
       ExportNamedDeclaration(pathRef, state) {
-        if (!shouldTransformFile(state.file.opts.filename, state.opts.projectRoot)) {
+        if (
+          !shouldTransformFile(state.file.opts.filename, state.opts.projectRoot)
+        ) {
           return;
         }
 
@@ -137,11 +189,22 @@ module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
 
       CallExpression(pathRef, state) {
         if (
-          !shouldTransformFile(
-            state.file.opts.filename,
-            state.opts.projectRoot,
-          )
+          !shouldTransformFile(state.file.opts.filename, state.opts.projectRoot)
         ) {
+          return;
+        }
+
+        const callOnRuntimeCall = extractCallOnRuntimeCall(pathRef.node);
+        if (callOnRuntimeCall) {
+          pathRef.replaceWith(
+            t.callExpression(
+              t.memberExpression(
+                callOnRuntimeCall.scheduledFunction,
+                t.identifier('runOn'),
+              ),
+              [callOnRuntimeCall.runtimeArg, ...callOnRuntimeCall.args],
+            ),
+          );
           return;
         }
 

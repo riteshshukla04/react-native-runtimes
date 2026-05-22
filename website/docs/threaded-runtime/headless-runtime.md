@@ -48,20 +48,22 @@ Native starts or reuses the named runtime. If the runtime is still starting, the
 For request/response work, use an awaitable runtime function instead:
 
 ```tsx
-import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
+import { call, runtimeFunction } from '@react-native-runtimes/core';
 
-export const hydrateConversation = runtimeFunction(async ({ conversationId }) => {
-  await messagesStore.hydrate();
-  return messagesStore.getSubtreeState(conversationId);
-});
-
-const messages = await usingRuntime('conversation-worker-runtime').run(() =>
-  hydrateConversation({ conversationId: 'inbox' }),
+export const hydrateConversation = runtimeFunction(
+  async ({ conversationId }) => {
+    await messagesStore.hydrate();
+    return messagesStore.getSubtreeState(conversationId);
+  },
 );
+
+const messages = await call(hydrateConversation).on(
+  'conversation-worker-runtime',
+)({ conversationId: 'inbox' });
 ```
 
 The Metro wrapper assigns the exported function a stable id and rewrites the
-`usingRuntime(...).run(...)` call to dispatch it to the requested runtime.
+`call(...).on(...)` call to dispatch it to the requested runtime.
 See [Scheduling Functions on Another Runtime](./scheduling-functions.md) for the
 full API contract and lookup model.
 

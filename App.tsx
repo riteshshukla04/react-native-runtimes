@@ -39,14 +39,14 @@ import {
 import { ChatBubble } from './src/chat/ChatBubble';
 import type { RenderedChatItem } from './src/native/ComposeChatListNativeComponent';
 import {
+  call,
   threadedComponent,
   Threaded,
   ThreadedRuntime,
   ThreadedScreen,
-  usingRuntime,
 } from '@react-native-runtimes/core';
 import {
-  calculateFibonacci,
+  fibonacci,
   type FibonacciResult,
 } from './src/examples/fibonacciRuntimeFunction';
 import {
@@ -1024,8 +1024,8 @@ function FibonacciRuntimeFunctionScreen() {
     setStatus('running');
     setErrorMessage(null);
 
-    void usingRuntime(FIBONACCI_RUNTIME_NAME)
-      .run(() => calculateFibonacci({ n: input }))
+    void call(fibonacci)
+      .on(FIBONACCI_RUNTIME_NAME)(input)
       .then(nextResult => {
         setLatencyMs(Date.now() - startedAt);
         setResult(nextResult);
