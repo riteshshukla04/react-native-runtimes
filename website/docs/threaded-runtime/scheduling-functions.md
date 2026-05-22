@@ -6,6 +6,48 @@ title: Scheduling Functions on Another Runtime
 Use awaitable runtime functions when one runtime needs a return value from code
 executed on another named runtime.
 
+## Function Used Only On A Single Thread
+
+When a function should always run on the same runtime, define it in module/global
+scope and put that runtime name as the first string directive in the function
+body:
+
+```tsx
+async function sum(a: number, b: number) {
+  'background';
+  return a + b;
+}
+
+const result = await sum(5, 1);
+```
+
+Metro turns that into a registered runtime function and replaces the original
+function with a scheduled alias:
+
+```tsx
+export const sum_ = runtimeFunction.withId(
+  'src/math.sum_',
+  async function sum(a: number, b: number) {
+    'background';
+    return a + b;
+  },
+);
+
+const sum = call(sum_).on('background');
+const result = await sum(5, 1);
+```
+
+The generated `sum_` export is intentionally private-looking, but it must exist
+so other runtimes can load the function through `require(file).sum_`.
+
+Use this shortcut for fixed-runtime helpers. Use `call(fn).on(runtimeName)` when
+the caller should choose the runtime.
+
+## Function Used On Different Runtimes
+
+When the caller should choose the runtime, export a runtime function and schedule
+it with `call(fn).on(runtimeName)(...args)`:
+
 ```tsx
 import { call, runtimeFunction } from '@react-native-runtimes/core';
 
@@ -37,40 +79,11 @@ It is rewritten to a direct call on the registered runtime function:
 const result = await fibonacci.runOn('fibonacci-worker-runtime', 38);
 ```
 
-For a local top-level function that should always run on one runtime, put the
-runtime name as the first string directive in the function body:
-
-```tsx
-async function sum(a: number, b: number) {
-  'background';
-  return a + b;
-}
-
-const result = await sum(5, 1);
-```
-
-Metro turns that into the same registered runtime function shape:
-
-```tsx
-export const sum_ = runtimeFunction.withId(
-  'src/math.sum_',
-  async function sum(a: number, b: number) {
-    'background';
-    return a + b;
-  },
-);
-
-const sum = call(sum_).on('background');
-const result = await sum(5, 1);
-```
-
-The generated `sum_` export is intentionally private-looking, but it must exist
-so other runtimes can load the function through `require(file).sum_`.
-
-## Fixed Runtime Shortcut
+## Function Directive Details
 
 Use a function directive when the function always belongs on the same runtime.
-The directive must be the first statement in a top-level function declaration:
+The function must be declared in module/global scope, and the directive must be
+the first statement in the function body:
 
 ```tsx
 async function refreshCache(key: string) {
@@ -192,6 +205,7 @@ Current constraints:
 - arguments and return values must be JSON-serializable
 - scheduled functions must be exported and wrapped in `runtimeFunction`, or use
   the top-level function directive shortcut
+- directive shortcut functions must be declared in module/global scope
 - inline lambdas and non-exported functions are not supported
 - closures are not captured; pass all inputs as arguments
 - directive shortcut functions are rewritten to `const` aliases, so define them
