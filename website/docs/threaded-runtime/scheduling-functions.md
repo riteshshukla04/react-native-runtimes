@@ -9,20 +9,28 @@ executed on another named runtime.
 ```tsx
 import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
 
-export const refreshBusinessState = runtimeFunction(
-  async ({ reason }: { reason: string }) => {
-    await businessStore.hydrate();
-    await businessStore.dispatchSubtree(
-      { type: 'refreshRequested', reason },
-      'business',
-    );
+function fibonacci(n: number) {
+  if (n < 2) {
+    return n;
+  }
 
-    return businessStore.getSubtreeState('business');
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+export const calculateFibonacci = runtimeFunction(
+  ({ n }: { n: number }) => {
+    const input = Math.max(0, Math.min(45, Math.floor(n)));
+
+    return {
+      input,
+      result: fibonacci(input),
+      computedAt: new Date().toISOString(),
+    };
   },
 );
 
-const snapshot = await usingRuntime('business-runtime').run(() =>
-  refreshBusinessState({ reason: 'manual' }),
+const result = await usingRuntime('fibonacci-worker-runtime').run(() =>
+  calculateFibonacci({ n: 38 }),
 );
 ```
 
@@ -30,10 +38,33 @@ The `usingRuntime(...).run(...)` callback is syntax for Metro to transform. It
 is rewritten to a direct call on the registered runtime function:
 
 ```tsx
-const snapshot = await refreshBusinessState.runOn('business-runtime', {
-  reason: 'manual',
+const result = await calculateFibonacci.runOn('fibonacci-worker-runtime', {
+  n: 38,
 });
 ```
+
+## Why Wrap With `runtimeFunction`?
+
+`runtimeFunction` marks a function as callable from another runtime. It attaches
+the generated function id, exposes the typed `.runOn(runtimeName, ...args)` API,
+and gives Metro a clear export boundary to register.
+
+Metro can generate the stable id for this:
+
+```tsx
+export const calculateFibonacci = runtimeFunction(fn);
+```
+
+but it still needs to know which exported functions are safe to schedule. Plain
+functions can close over local values, mutate module state, depend on runtime-only
+objects, or accept values that cannot be serialized. The wrapper is the explicit
+contract that says: this function is exported, registered, accepts JSON inputs,
+returns JSON output, and can be loaded by another runtime.
+
+We can make this lighter later. For example, Metro could transform an exported
+function with a directive or annotation into a runtime function automatically.
+For now the wrapper keeps the behavior visible in source and gives TypeScript the
+right call shape.
 
 ## How Lookup Works
 
@@ -42,8 +73,9 @@ Runtime functions are not sent as source code. Metro gives each exported
 
 ```tsx
 registerRuntimeFunction(
-  'src/business.refreshBusinessState',
-  () => require('./src/business').refreshBusinessState,
+  'src/examples/fibonacciRuntimeFunction.calculateFibonacci',
+  () =>
+    require('./src/examples/fibonacciRuntimeFunction').calculateFibonacci,
 );
 ```
 
@@ -64,17 +96,19 @@ The callback passed to `usingRuntime(...).run(...)` must contain exactly one
 call to one exported runtime function:
 
 ```tsx
-await usingRuntime('worker-runtime').run(() => doWork({ id: '42' }));
+await usingRuntime('fibonacci-worker-runtime').run(() =>
+  calculateFibonacci({ n: 38 }),
+);
 ```
 
 Use an explicit id when the generated file-path id should not be part of your
 public API:
 
 ```tsx
-export const doWork = runtimeFunction.named(
-  'jobs.doWork',
-  async ({ id }: { id: string }) => {
-    return jobsStore.getSubtreeState(id);
+export const calculateFibonacci = runtimeFunction.named(
+  'examples.calculateFibonacci',
+  ({ n }: { n: number }) => {
+    return fibonacci(n);
   },
 );
 ```

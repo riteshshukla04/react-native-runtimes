@@ -232,15 +232,28 @@ another runtime and return a value to the caller.
 ```tsx
 import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
 
-export const refreshConversation = runtimeFunction(
-  async ({ conversationId }: { conversationId: string }) => {
-    await messagesStore.hydrate();
-    return messagesStore.getSubtreeState(conversationId);
+function fibonacci(n: number) {
+  if (n < 2) {
+    return n;
+  }
+
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+export const calculateFibonacci = runtimeFunction(
+  ({ n }: { n: number }) => {
+    const input = Math.max(0, Math.min(45, Math.floor(n)));
+
+    return {
+      input,
+      result: fibonacci(input),
+      computedAt: new Date().toISOString(),
+    };
   },
 );
 
-const messages = await usingRuntime('conversation-release-room-runtime').run(
-  () => refreshConversation({ conversationId: 'release-room' }),
+const result = await usingRuntime('fibonacci-worker-runtime').run(() =>
+  calculateFibonacci({ n: 38 }),
 );
 ```
 
@@ -248,10 +261,17 @@ The callback is compile-time syntax. The Metro transformer rewrites it before
 the app runs:
 
 ```tsx
-await refreshConversation.runOn('conversation-release-room-runtime', {
-  conversationId: 'release-room',
+await calculateFibonacci.runOn('fibonacci-worker-runtime', {
+  n: 38,
 });
 ```
+
+`runtimeFunction` marks a function as callable from another runtime. It attaches
+the generated function id, exposes the typed `.runOn(runtimeName, ...args)` API,
+and gives Metro a clear export boundary to register. Metro can generate the
+stable id, but it still needs to know which exported functions are safe to
+schedule. The wrapper is the explicit contract that says this function accepts
+JSON inputs, returns JSON output, and can be loaded by another runtime.
 
 The runtime function must be exported from a project file so the target runtime
 can find the same code in its own bundle. Metro annotates exported
@@ -260,8 +280,9 @@ export name, then generates a registration that looks like this:
 
 ```tsx
 registerRuntimeFunction(
-  'src/messages.refreshConversation',
-  () => require('./src/messages').refreshConversation,
+  'src/examples/fibonacciRuntimeFunction.calculateFibonacci',
+  () =>
+    require('./src/examples/fibonacciRuntimeFunction').calculateFibonacci,
 );
 ```
 
@@ -274,17 +295,19 @@ The callback passed to `usingRuntime(...).run(...)` must contain exactly one
 call to one exported runtime function:
 
 ```tsx
-await usingRuntime('worker-runtime').run(() => refreshConversation(args));
+await usingRuntime('fibonacci-worker-runtime').run(() =>
+  calculateFibonacci({ n: 38 }),
+);
 ```
 
 For explicit stable ids, use `runtimeFunction.named` or
 `runtimeFunction.withId`:
 
 ```tsx
-export const refreshConversation = runtimeFunction.named(
-  'chat.refreshConversation',
-  async (args: RefreshConversationArgs) => {
-    // ...
+export const calculateFibonacci = runtimeFunction.named(
+  'examples.calculateFibonacci',
+  ({ n }: { n: number }) => {
+    return fibonacci(n);
   },
 );
 ```
