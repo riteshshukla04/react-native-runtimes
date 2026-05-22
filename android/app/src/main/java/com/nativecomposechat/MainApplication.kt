@@ -1,6 +1,9 @@
 package com.nativecomposechat
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
+import android.os.Handler
+import android.os.Looper
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -39,19 +42,27 @@ class MainApplication : Application(), ReactApplication {
       )
     }
     loadReactNative(this)
-    ThreadedRuntime.prewarmRuntime(
-        applicationContext,
-        "chat-thread-release-room-runtime",
-    )
-    ThreadedRuntime.prewarmBusinessRuntime(
-        applicationContext,
-        "two-runtimes-business-runtime",
-    )
-    ThreadedRuntime.dispatchHeadlessTask(
-        applicationContext,
-        "two-runtimes-business-runtime",
-        "twoRuntimes:startBusinessRuntime",
-        "{\"startedBy\":\"android native startup\",\"enqueuedAt\":${System.currentTimeMillis()}}",
-    )
+    val prewarmBackgroundRuntimes = {
+      ThreadedRuntime.prewarmRuntime(
+          applicationContext,
+          "chat-thread-release-room-runtime",
+      )
+      ThreadedRuntime.prewarmBusinessRuntime(
+          applicationContext,
+          "two-runtimes-business-runtime",
+      )
+      ThreadedRuntime.dispatchHeadlessTask(
+          applicationContext,
+          "two-runtimes-business-runtime",
+          "twoRuntimes:startBusinessRuntime",
+          "{\"startedBy\":\"android native startup\",\"enqueuedAt\":${System.currentTimeMillis()}}",
+      )
+    }
+
+    if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+      Handler(Looper.getMainLooper()).postDelayed(prewarmBackgroundRuntimes, 3000)
+    } else {
+      prewarmBackgroundRuntimes()
+    }
   }
 }
