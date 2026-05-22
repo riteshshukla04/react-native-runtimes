@@ -5,6 +5,7 @@
   "scripts": {
     "start": "docusaurus start",
     "build": "docusaurus build",
+    "build:local": "DOCUSAURUS_BASE_URL=/ docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear"
   },

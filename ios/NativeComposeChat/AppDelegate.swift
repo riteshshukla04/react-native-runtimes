@@ -30,17 +30,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       in: window,
       launchOptions: launchOptions
     )
-    ThreadedRuntime.prewarmRuntime("chat-thread-release-room-runtime")
-    ThreadedRuntime.prewarmBusinessRuntime("two-runtimes-business-runtime")
-    let businessRuntimePayload = String(
-      format: "{\"startedBy\":\"ios native startup\",\"enqueuedAt\":%.0f}",
-      Date().timeIntervalSince1970 * 1000
-    )
-    ThreadedRuntime.dispatchHeadlessTask(
-      withRuntimeName: "two-runtimes-business-runtime",
-      taskName: "twoRuntimes:startBusinessRuntime",
-      payloadJson: businessRuntimePayload
-    )
 
     return true
   }

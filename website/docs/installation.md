@@ -6,7 +6,7 @@ title: Installation
 Install the runtime and shared store packages:
 
 ```sh
-npm install @native-compose/threaded-runtime @native-compose/threaded-zustand react-native-nitro-modules
+npm install @react-native-runtimes/core @react-native-runtimes/state react-native-nitro-modules
 ```
 
 For local development in this repository the app uses file dependencies:
@@ -14,8 +14,8 @@ For local development in this repository the app uses file dependencies:
 ```json
 {
   "dependencies": {
-    "@native-compose/threaded-runtime": "file:packages/threaded-runtime",
-    "@native-compose/threaded-zustand": "file:packages/threaded-zustand"
+    "@react-native-runtimes/core": "file:packages/core",
+    "@react-native-runtimes/state": "file:packages/state"
   }
 }
 ```
@@ -100,10 +100,8 @@ ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "business-runtime")
 Wrap your Metro config so the package can generate the threaded entry file:
 
 ```js
-const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
-const {
-  withThreadedRuntime,
-} = require('@native-compose/threaded-runtime/metro');
+const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const { withThreadedRuntime } = require('@react-native-runtimes/core/metro');
 
 const config = {};
 
@@ -132,3 +130,8 @@ if (global.__THREADED_RUNTIME_ENV__ || global._is_it_a_list_env === true) {
 ```
 
 The generated entry registers lazy component loaders and the `ThreadedRuntimeHost` root used by native.
+
+For runtime-specific startup code, add root-level files named
+`index.<runtime>.ts`, for example `index.business-runtime.ts`. The generated
+entry emits static conditional requires for those files and matches `<runtime>`
+against `global.__THREADED_RUNTIME_ENV__.kind` and `.runtimeName`.

@@ -14,6 +14,14 @@ Create a production build:
 npm run build
 ```
 
+Create a local/shareable HTML build that works at `http://localhost:8080/`:
+
+```sh
+npm run build:local
+cd build
+python3 -m http.server 8080
+```
+
 ## GitHub Pages
 
 Docs are published from GitHub Actions to:

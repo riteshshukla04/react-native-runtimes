@@ -6,8 +6,8 @@ slug: /
 
 Native Compose Runtimes provides two React Native libraries:
 
-- `@native-compose/threaded-runtime` mounts selected React components, whole screens, or headless tasks on named secondary React Native runtimes.
-- `@native-compose/threaded-zustand` provides a small Zustand-like shared store backed by native C++ state so multiple runtimes can read and update the same data.
+- `@react-native-runtimes/core` mounts selected React components, whole screens, or headless tasks on named secondary React Native runtimes.
+- `@react-native-runtimes/state` provides a small Zustand-like shared store backed by native C++ state so multiple runtimes can read and update the same data.
 
 The main use cases are chat screens, expensive list renderers, background preparation, and shared state that must survive across runtime boundaries.
 

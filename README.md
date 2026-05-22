@@ -8,7 +8,7 @@ The app exercises:
 - Main-runtime RN list baselines with FlatList and LegendList.
 - Threaded-runtime list surfaces with FlashList and LegendList.
 - Whole-screen threaded rendering for chat-style flows.
-- Shared state across runtimes through `@native-compose/threaded-zustand`.
+- Shared state across runtimes through `@react-native-runtimes/state`.
 - Runtime prewarming, headless tasks, and a two-runtime architecture example.
 
 ## Running
@@ -37,6 +37,6 @@ Start with the hosted docs:
 
 Source docs are also available in the repo:
 
-- [Threaded runtime package docs](packages/threaded-runtime/README.md)
-- [Threaded Zustand package docs](packages/threaded-zustand/README.md)
+- [Threaded runtime package docs](packages/core/README.md)
+- [Threaded Zustand package docs](packages/state/README.md)
 - [Docusaurus source docs](website/docs/intro.md)

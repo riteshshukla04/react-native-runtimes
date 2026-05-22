@@ -1,0 +1,13 @@
+appId: com.nativecomposechat
+---
+- launchApp
+- tapOn:
+    id: open-fibonacci-runtime
+- extendedWaitUntil:
+    visible: Fibonacci runtime function
+    timeout: 10000
+- tapOn:
+    id: fibonacci-run
+- extendedWaitUntil:
+    visible: 39,088,169
+    timeout: 10000

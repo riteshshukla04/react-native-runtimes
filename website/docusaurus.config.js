@@ -5,7 +5,7 @@ const config = {
   tagline: 'Run React Native UI and state work across named JS runtimes.',
 
   url: 'https://szymon20000.github.io',
-  baseUrl: '/react-native-runtimes/',
+  baseUrl: process.env.DOCUSAURUS_BASE_URL || '/react-native-runtimes/',
 
   organizationName: 'Szymon20000',
   projectName: 'react-native-runtimes',

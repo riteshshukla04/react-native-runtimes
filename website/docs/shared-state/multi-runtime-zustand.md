@@ -3,21 +3,21 @@ id: multi-runtime-zustand
 title: Multi Runtime Zustand
 ---
 
-`@native-compose/threaded-zustand` is a small Zustand-like API backed by a native C++ singleton. It lets the main runtime and threaded runtimes read and update shared state without passing large props through the threaded surface.
+`@react-native-runtimes/state` is a small Zustand-like API backed by a native C++ singleton. It lets the main runtime and threaded runtimes read and update shared state without passing large props through the threaded surface.
 
 Create a store:
 
 ```tsx
-import {createSharedStore} from '@native-compose/threaded-zustand';
+import { createSharedStore } from '@react-native-runtimes/state';
 
 type ChatState = {
   conversations: Record<string, Message[]>;
-  metadata: Record<string, {updatedAt: string}>;
+  metadata: Record<string, { updatedAt: string }>;
 };
 
 type ChatAction =
-  | {type: 'replaceMessages'; conversationId: string; messages: Message[]}
-  | {type: 'markUpdated'; conversationId: string; updatedAt: string};
+  | { type: 'replaceMessages'; conversationId: string; messages: Message[] }
+  | { type: 'markUpdated'; conversationId: string; updatedAt: string };
 
 export const chatStore = createSharedStore<ChatState, ChatAction>({
   name: 'chat',
@@ -43,7 +43,7 @@ export const chatStore = createSharedStore<ChatState, ChatAction>({
 
       return {
         ...state,
-        [action.conversationId]: {updatedAt: action.updatedAt},
+        [action.conversationId]: { updatedAt: action.updatedAt },
       };
     },
   },
@@ -53,7 +53,7 @@ export const chatStore = createSharedStore<ChatState, ChatAction>({
 Subscribe in either runtime:
 
 ```tsx
-function Conversation({conversationId}: {conversationId: string}) {
+function Conversation({ conversationId }: { conversationId: string }) {
   const messages = chatStore.useStore(
     state => state.conversations[conversationId] ?? [],
     ['conversations'],
@@ -89,7 +89,7 @@ Dispatch to the subtree that owns the change:
 
 ```tsx
 await chatStore.dispatchSubtree(
-  {type: 'markUpdated', conversationId, updatedAt: new Date().toISOString()},
+  { type: 'markUpdated', conversationId, updatedAt: new Date().toISOString() },
   'metadata',
 );
 ```

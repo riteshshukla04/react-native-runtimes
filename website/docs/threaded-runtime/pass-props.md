@@ -14,7 +14,7 @@ Props are serialized by the main runtime and passed to the threaded surface as J
     participants: 'Ava, Noah, Mia',
   }}
   runtimeName="conversation-release-room-runtime"
-/>;
+/>
 ```
 
 Inside the threaded component, read props normally:
@@ -40,7 +40,7 @@ export const ConversationScreen = threadedComponent<ConversationScreenProps>(
 - Props must be JSON-serializable.
 - Do not pass functions, class instances, refs, native handles, or cyclic objects.
 - Prefer ids, cursors, and config values over large datasets.
-- Use `@native-compose/threaded-zustand` for mutable or shared state.
+- Use `@react-native-runtimes/state` for mutable or shared state.
 - Keep `runtimeName` stable for a logical owner, such as one runtime per conversation.
 
 ## Recommended Pattern
@@ -50,13 +50,13 @@ Pass identity through props, then load or subscribe to the real data inside the 
 ```tsx
 <ThreadedScreen
   component={ConversationScreen}
-  props={{conversationId}}
+  props={{ conversationId }}
   runtimeName={`conversation-${conversationId}-runtime`}
-/>;
+/>
 ```
 
 ```tsx
-function ConversationRoute({conversationId}: {conversationId: string}) {
+function ConversationRoute({ conversationId }: { conversationId: string }) {
   const messages = messagesStore.useStore(
     state => state.conversations[conversationId] ?? [],
     ['conversations'],

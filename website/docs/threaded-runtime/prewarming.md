@@ -6,7 +6,7 @@ title: Prewarming
 Prewarming creates and starts a named secondary runtime before a surface needs it.
 
 ```tsx
-import {ThreadedRuntime} from '@native-compose/threaded-runtime';
+import { ThreadedRuntime } from '@react-native-runtimes/core';
 
 await ThreadedRuntime.prewarm('conversation-release-room-runtime');
 ```
@@ -81,7 +81,7 @@ For route components, set `destroyOnUnmount` when the screen should release the 
 <ThreadedScreen
   component={ConversationScreen}
   destroyOnUnmount
-  props={{conversationId}}
+  props={{ conversationId }}
   runtimeName={`conversation-${conversationId}-runtime`}
-/>;
+/>
 ```

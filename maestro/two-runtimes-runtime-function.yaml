@@ -1,0 +1,13 @@
+appId: com.nativecomposechat
+---
+- launchApp
+- tapOn:
+    id: open-two-runtimes-architecture
+- extendedWaitUntil:
+    visible: 2 runtimes architecture
+    timeout: 10000
+- tapOn:
+    id: two-runtimes-sync-now
+- extendedWaitUntil:
+    visible: manual sync from main RN
+    timeout: 10000

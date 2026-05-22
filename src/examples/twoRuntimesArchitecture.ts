@@ -1,8 +1,10 @@
 import {
   ThreadedRuntime,
   registerThreadedHeadlessTask,
-} from '@native-compose/threaded-runtime';
-import {createSharedStore} from '@native-compose/threaded-zustand';
+  runtimeFunction,
+  usingRuntime,
+} from '@react-native-runtimes/core';
+import { createSharedStore } from '@react-native-runtimes/state';
 
 export type TwoRuntimeBusinessStatus = {
   bootedAt: string | null;
@@ -89,8 +91,8 @@ export const twoRuntimeArchitectureStore =
 
 function runtimeKind() {
   const globals = globalThis as {
-    __COMPOSE_CHAT_LIST_ENV__?: {kind?: string};
-    __THREADED_RUNTIME_ENV__?: {kind?: string};
+    __COMPOSE_CHAT_LIST_ENV__?: { kind?: string };
+    __THREADED_RUNTIME_ENV__?: { kind?: string };
   };
   return (
     globals.__THREADED_RUNTIME_ENV__?.kind ??
@@ -159,7 +161,7 @@ let businessLoop: ReturnType<typeof setInterval> | null = null;
 
 registerThreadedHeadlessTask<TwoRuntimeBusinessTaskPayload>(
   TWO_RUNTIMES_BUSINESS_TASK,
-  async ({payload}) => {
+  async ({ payload }) => {
     await twoRuntimeArchitectureStore.hydrate();
 
     if (businessLoop) {
@@ -180,9 +182,20 @@ registerThreadedHeadlessTask<TwoRuntimeBusinessTaskPayload>(
 
 registerThreadedHeadlessTask<TwoRuntimeBusinessTaskPayload>(
   TWO_RUNTIMES_SYNC_TASK,
-  async ({payload}) => {
+  async ({ payload }) => {
     await twoRuntimeArchitectureStore.hydrate();
     await publishBusinessSnapshot(payload.command ?? 'manual sync', payload);
+  },
+);
+
+export const syncTwoRuntimeBusinessSnapshot = runtimeFunction(
+  async (payload: TwoRuntimeBusinessTaskPayload) => {
+    await twoRuntimeArchitectureStore.hydrate();
+    await publishBusinessSnapshot(payload.command ?? 'runtime function sync', {
+      ...payload,
+      startedBy: payload.startedBy ?? runtimeKind(),
+    });
+    return twoRuntimeArchitectureStore.getSubtreeState('business');
   },
 );
 
@@ -226,12 +239,11 @@ export async function requestTwoRuntimeBusinessSync(command: string) {
     },
     true,
   );
-  await ThreadedRuntime.runHeadlessTask(TWO_RUNTIMES_SYNC_TASK, {
-    runtimeName: TWO_RUNTIMES_BUSINESS_RUNTIME_NAME,
-    payload: {
+  await usingRuntime(TWO_RUNTIMES_BUSINESS_RUNTIME_NAME).run(() =>
+    syncTwoRuntimeBusinessSnapshot({
       command,
       enqueuedAt: Date.now(),
       startedBy: 'main RN',
-    },
-  });
+    }),
+  );
 }

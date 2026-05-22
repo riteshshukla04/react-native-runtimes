@@ -26,7 +26,7 @@ import {
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { LegendList, type LegendListRef } from '@legendapp/list';
 import { EaseView } from 'react-native-ease';
-import { createSharedStore } from '@native-compose/threaded-zustand';
+import { createSharedStore } from '@react-native-runtimes/state';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -43,7 +43,12 @@ import {
   Threaded,
   ThreadedRuntime,
   ThreadedScreen,
-} from '@native-compose/threaded-runtime';
+  usingRuntime,
+} from '@react-native-runtimes/core';
+import {
+  calculateFibonacci,
+  type FibonacciResult,
+} from './src/examples/fibonacciRuntimeFunction';
 import {
   requestTwoRuntimeBusinessSync,
   startTwoRuntimeBusinessRuntime,
@@ -59,6 +64,7 @@ type SharedRuntimeMode =
   | 'home'
   | 'shared-tree'
   | 'poke-shared'
+  | 'fibonacci-runtime'
   | 'two-runtimes-architecture'
   | 'threaded-chat-screen'
   | 'threaded-chat-app';
@@ -123,6 +129,7 @@ type HomePersistenceState = {
 
 const POKEMON_PAGE_SIZE = 24;
 const HOME_RUNTIME_NAME = 'home-persistence-runtime';
+const FIBONACCI_RUNTIME_NAME = 'fibonacci-worker-runtime';
 const CHAT_THREADS: ChatThreadSummary[] = [
   {
     id: 'release-room',
@@ -234,6 +241,15 @@ const APP_LAUNCH_SECTIONS: AppLaunchSection[] = [
           'Main runtime fetches pages while threaded runtime consumes them.',
         runtime: 'Main + threaded RN',
         workload: 'PokeAPI pages',
+      },
+      {
+        mode: 'fibonacci-runtime',
+        title: 'Fibonacci',
+        eyebrow: 'Runtime function',
+        description:
+          'Main RN awaits a typed function running on a named runtime.',
+        runtime: 'Main caller + worker RN',
+        workload: 'Awaitable compute',
       },
       {
         mode: 'two-runtimes-architecture',
@@ -423,9 +439,6 @@ function AppContent() {
 
   useEffect(() => {
     void twoRuntimeArchitectureStore.hydrate();
-    void startTwoRuntimeBusinessRuntime('app startup').catch(error => {
-      console.warn('[two-runtimes] failed to start business runtime', error);
-    });
   }, []);
 
   useEffect(() => {
@@ -516,6 +529,10 @@ function AppRouteContent({
 
   if (mode === 'two-runtimes-architecture') {
     return <TwoRuntimesArchitectureScreen />;
+  }
+
+  if (mode === 'fibonacci-runtime') {
+    return <FibonacciRuntimeFunctionScreen />;
   }
 
   if (mode === 'threaded-chat-screen') {
@@ -987,6 +1004,111 @@ function TwoRuntimesArchitectureScreen() {
           id="two-runtimes-reset"
           label="Reset"
           onPress={resetStore}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FibonacciRuntimeFunctionScreen() {
+  const [input, setInput] = useState(38);
+  const [result, setResult] = useState<FibonacciResult | null>(null);
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>(
+    'idle',
+  );
+  const [latencyMs, setLatencyMs] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const runFibonacci = useCallback(() => {
+    const startedAt = Date.now();
+    setStatus('running');
+    setErrorMessage(null);
+
+    void usingRuntime(FIBONACCI_RUNTIME_NAME)
+      .run(() => calculateFibonacci({ n: input }))
+      .then(nextResult => {
+        setLatencyMs(Date.now() - startedAt);
+        setResult(nextResult);
+        setStatus('done');
+      })
+      .catch(error => {
+        setLatencyMs(Date.now() - startedAt);
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+        setStatus('error');
+      });
+  }, [input]);
+
+  useEffect(() => {
+    void ThreadedRuntime.prewarm(FIBONACCI_RUNTIME_NAME, {
+      kind: 'fibonacci-runtime',
+    });
+  }, []);
+
+  return (
+    <View
+      accessibilityLabel="fibonacci-runtime-screen"
+      style={styles.fibonacciScreen}
+      testID="fibonacci-runtime-screen"
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>Fibonacci runtime function</Text>
+        <Text style={styles.subtitle}>
+          Main RN dispatches an awaitable function to a named runtime and
+          renders the returned JSON result.
+        </Text>
+      </View>
+
+      <View style={styles.fibonacciContent}>
+        <View style={styles.fibonacciHero}>
+          <Text style={styles.sharedTreeRuntime}>target runtime</Text>
+          <Text style={styles.fibonacciRuntimeName}>
+            {FIBONACCI_RUNTIME_NAME}
+          </Text>
+          <Text style={styles.fibonacciResultValue}>
+            {result ? result.result.toLocaleString() : 'pending'}
+          </Text>
+          <Text style={styles.fibonacciMeta}>
+            input {result?.input ?? input} / {status} / {latencyMs}ms
+          </Text>
+        </View>
+
+        <View style={styles.fibonacciControls}>
+          <ActionButton
+            id="fibonacci-decrement"
+            label="-"
+            onPress={() => setInput(value => Math.max(0, value - 1))}
+          />
+          <View style={styles.fibonacciInputPanel}>
+            <Text style={styles.fibonacciInputLabel}>n</Text>
+            <Text style={styles.fibonacciInputValue}>{input}</Text>
+          </View>
+          <ActionButton
+            id="fibonacci-increment"
+            label="+"
+            onPress={() => setInput(value => Math.min(45, value + 1))}
+          />
+        </View>
+
+        <View style={styles.twoRuntimeDetailPanel}>
+          <Text style={styles.twoRuntimeDetailTitle}>Runtime response</Text>
+          <Text style={styles.twoRuntimeDetailText}>
+            executed on {result?.runtimeKind ?? 'pending'} /{' '}
+            {result?.runtimeName ?? FIBONACCI_RUNTIME_NAME}
+          </Text>
+          <Text style={styles.twoRuntimeDetailText}>
+            completed {formatFetchTime(result?.computedAt ?? null)}
+          </Text>
+          {errorMessage ? (
+            <Text style={styles.fibonacciError}>{errorMessage}</Text>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.homeFooter}>
+        <ActionButton
+          id="fibonacci-run"
+          label={status === 'running' ? 'Running' : 'Run'}
+          onPress={runFibonacci}
         />
       </View>
     </View>
@@ -2612,6 +2734,75 @@ const styles = StyleSheet.create({
   },
   twoRuntimeMetricDeltaDown: {
     color: '#B91C1C',
+  },
+  fibonacciScreen: {
+    backgroundColor: '#F6F7F9',
+    flex: 1,
+  },
+  fibonacciContent: {
+    flex: 1,
+    gap: 10,
+    padding: 12,
+  },
+  fibonacciHero: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 190,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  fibonacciRuntimeName: {
+    color: '#4B5563',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  fibonacciResultValue: {
+    color: '#0F766E',
+    fontSize: 42,
+    fontWeight: '800',
+    marginTop: 18,
+  },
+  fibonacciMeta: {
+    color: '#4B5563',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 5,
+  },
+  fibonacciControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fibonacciInputPanel: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 58,
+  },
+  fibonacciInputLabel: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  fibonacciInputValue: {
+    color: '#111827',
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  fibonacciError: {
+    color: '#FCA5A5',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 16,
+    marginTop: 4,
   },
   threadedScreenSurface: {
     flex: 1,

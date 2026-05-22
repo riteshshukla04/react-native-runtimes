@@ -12,20 +12,16 @@ crypto-style job queue example.
 Register a task in code loaded by the threaded bundle:
 
 ```tsx
-import {registerThreadedHeadlessTask} from '@native-compose/threaded-runtime';
-import {messagesStore} from './messagesStore';
+import { registerThreadedHeadlessTask } from '@react-native-runtimes/core';
+import { messagesStore } from './messagesStore';
 
 registerThreadedHeadlessTask<{
   conversationId: string;
   limit: number;
-}>('hydrateConversation', async ({payload, runtimeName}) => {
+}>('hydrateConversation', async ({ payload, runtimeName }) => {
   const messages = await loadMessages(payload.conversationId, payload.limit);
 
-  await messagesStore.setSubtreeState(
-    payload.conversationId,
-    messages,
-    true,
-  );
+  await messagesStore.setSubtreeState(payload.conversationId, messages, true);
 
   console.info(`Hydrated ${payload.conversationId} on ${runtimeName}`);
 });
@@ -34,7 +30,7 @@ registerThreadedHeadlessTask<{
 Dispatch the task from JS:
 
 ```tsx
-import {ThreadedRuntime} from '@native-compose/threaded-runtime';
+import { ThreadedRuntime } from '@react-native-runtimes/core';
 
 await ThreadedRuntime.runHeadlessTask('hydrateConversation', {
   runtimeName: 'conversation-worker-runtime',
@@ -46,6 +42,26 @@ await ThreadedRuntime.runHeadlessTask('hydrateConversation', {
 ```
 
 Native starts or reuses the named runtime. If the runtime is still starting, the task is queued and flushed after startup. The returned promise resolves when native accepts the dispatch, not when the async task body finishes.
+
+## Await Runtime Functions
+
+For request/response work, use an awaitable runtime function instead:
+
+```tsx
+import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
+
+export const hydrateConversation = runtimeFunction(async ({ conversationId }) => {
+  await messagesStore.hydrate();
+  return messagesStore.getSubtreeState(conversationId);
+});
+
+const messages = await usingRuntime('conversation-worker-runtime').run(() =>
+  hydrateConversation({ conversationId: 'inbox' }),
+);
+```
+
+The Metro wrapper assigns the exported function a stable id and rewrites the
+`usingRuntime(...).run(...)` call to dispatch it to the requested runtime.
 
 ## Native Dispatch
 

@@ -1,0 +1,32 @@
+{
+  "name": "@react-native-runtimes/core",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "files": [
+    "android",
+    "cpp",
+    "ios",
+    "metro.d.ts",
+    "metro.js",
+    "metro-transformer.js",
+    "NativeComposeThreadedRuntime.podspec",
+    "README.md",
+    "runtime-function-babel-plugin.js",
+    "src"
+  ],
+  "typesVersions": {
+    "*": {
+      "metro": [
+        "metro.d.ts"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "*"
+  }
+}

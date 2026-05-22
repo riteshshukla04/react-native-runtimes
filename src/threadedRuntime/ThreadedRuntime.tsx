@@ -1,1 +1,1 @@
-export * from '@native-compose/threaded-runtime';
+export * from '@react-native-runtimes/core';

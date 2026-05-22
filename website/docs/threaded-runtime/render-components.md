@@ -10,7 +10,7 @@ import {
   Threaded,
   ThreadedScreen,
   threadedComponent,
-} from '@native-compose/threaded-runtime';
+} from '@react-native-runtimes/core';
 
 type MessageListProps = {
   conversationId: string;
@@ -28,7 +28,7 @@ export function ConversationPreview() {
   return (
     <Threaded
       component={MessageList}
-      props={{conversationId: 'release-room', initialIndex: 120}}
+      props={{ conversationId: 'release-room', initialIndex: 120 }}
       runtimeName="messages-runtime"
     />
   );
@@ -48,14 +48,14 @@ type ConversationScreenProps = {
 
 export const ConversationScreen = threadedComponent<ConversationScreenProps>(
   'ConversationScreen',
-  function ConversationScreen({conversationId}) {
+  function ConversationScreen({ conversationId }) {
     return <ConversationRoute conversationId={conversationId} />;
   },
 );
 
 <ThreadedScreen
   component={ConversationScreen}
-  props={{conversationId: 'release-room'}}
+  props={{ conversationId: 'release-room' }}
   runtimeName="conversation-release-room-runtime"
   testID="conversation-threaded-screen"
 />;

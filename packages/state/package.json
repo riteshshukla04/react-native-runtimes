@@ -1,0 +1,20 @@
+{
+  "name": "@react-native-runtimes/state",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "files": [
+    "android",
+    "ios",
+    "NativeComposeThreadedZustand.podspec",
+    "react-native.config.js",
+    "src"
+  ],
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "*"
+  }
+}

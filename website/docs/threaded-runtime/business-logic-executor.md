@@ -136,7 +136,7 @@ await ThreadedRuntime.prewarm('business-runtime', {
 Keep job status in a shared store so every runtime can observe it.
 
 ```tsx
-import {createSharedStore} from '@native-compose/threaded-zustand';
+import { createSharedStore } from '@react-native-runtimes/state';
 
 type CryptoJob = {
   id: string;
@@ -150,10 +150,10 @@ type CryptoState = {
 };
 
 type CryptoAction =
-  | {type: 'queued'; jobId: string}
-  | {type: 'running'; jobId: string}
-  | {type: 'done'; jobId: string; resultRef: string}
-  | {type: 'failed'; jobId: string; error: string};
+  | { type: 'queued'; jobId: string }
+  | { type: 'running'; jobId: string }
+  | { type: 'done'; jobId: string; resultRef: string }
+  | { type: 'failed'; jobId: string; error: string };
 
 export const cryptoJobsStore = createSharedStore<CryptoState, CryptoAction>({
   name: 'crypto-jobs',
@@ -169,9 +169,9 @@ export const cryptoJobsStore = createSharedStore<CryptoState, CryptoAction>({
 
       switch (action.type) {
         case 'queued':
-          return {...jobs, [action.jobId]: current};
+          return { ...jobs, [action.jobId]: current };
         case 'running':
-          return {...jobs, [action.jobId]: {...current, status: 'running'}};
+          return { ...jobs, [action.jobId]: { ...current, status: 'running' } };
         case 'done':
           return {
             ...jobs,
@@ -207,19 +207,19 @@ logic directly or call a native module that performs the sensitive or optimized
 part.
 
 ```tsx
-import {NativeModules} from 'react-native';
-import {registerThreadedHeadlessTask} from '@native-compose/threaded-runtime';
-import {cryptoJobsStore} from './cryptoJobsStore';
+import { NativeModules } from 'react-native';
+import { registerThreadedHeadlessTask } from '@react-native-runtimes/core';
+import { cryptoJobsStore } from './cryptoJobsStore';
 
-const {LocalCryptoModule} = NativeModules;
+const { LocalCryptoModule } = NativeModules;
 
 registerThreadedHeadlessTask<{
   jobId: string;
   keyId: string;
   plaintextRef: string;
-}>('encryptPayload', async ({payload}) => {
+}>('encryptPayload', async ({ payload }) => {
   await cryptoJobsStore.dispatchSubtree(
-    {type: 'running', jobId: payload.jobId},
+    { type: 'running', jobId: payload.jobId },
     'jobs',
   );
 
@@ -230,7 +230,7 @@ registerThreadedHeadlessTask<{
     );
 
     await cryptoJobsStore.dispatchSubtree(
-      {type: 'done', jobId: payload.jobId, resultRef},
+      { type: 'done', jobId: payload.jobId, resultRef },
       'jobs',
     );
   } catch (error) {
@@ -254,13 +254,13 @@ through JSON props or task payloads; pass ids or storage references.
 ## Dispatch Jobs From UI
 
 ```tsx
-import {ThreadedRuntime} from '@native-compose/threaded-runtime';
-import {cryptoJobsStore} from './cryptoJobsStore';
+import { ThreadedRuntime } from '@react-native-runtimes/core';
+import { cryptoJobsStore } from './cryptoJobsStore';
 
 async function encryptDraft(draftId: string) {
   const jobId = `encrypt-${draftId}-${Date.now()}`;
 
-  await cryptoJobsStore.dispatchSubtree({type: 'queued', jobId}, 'jobs');
+  await cryptoJobsStore.dispatchSubtree({ type: 'queued', jobId }, 'jobs');
 
   await ThreadedRuntime.runHeadlessTask('encryptPayload', {
     runtimeName: 'crypto-worker-runtime',
@@ -278,7 +278,7 @@ async function encryptDraft(draftId: string) {
 Subscribe to progress from any runtime:
 
 ```tsx
-function CryptoJobStatus({jobId}: {jobId: string}) {
+function CryptoJobStatus({ jobId }: { jobId: string }) {
   const job = cryptoJobsStore.useStore(state => state.jobs[jobId], ['jobs']);
 
   if (!job) {
