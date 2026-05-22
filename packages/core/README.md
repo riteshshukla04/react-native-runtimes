@@ -226,7 +226,8 @@ is still enough. Use `runHeadlessTask` when you need actual JS work to execute.
 
 Use `runtimeFunction` when the caller needs to await the result of a named
 function running on a chosen runtime. Arguments and return values are serialized
-as JSON.
+as JSON. This is the request/response API for work that should execute on
+another runtime and return a value to the caller.
 
 ```tsx
 import { runtimeFunction, usingRuntime } from '@react-native-runtimes/core';
@@ -243,10 +244,58 @@ const messages = await usingRuntime('conversation-release-room-runtime').run(
 );
 ```
 
-The Metro wrapper annotates exported `runtimeFunction(...)` declarations with a
-stable id and rewrites `usingRuntime(...).run(() => fn(args))` to an awaitable
-runtime call. The callback must contain one call to an exported runtime
-function. For explicit ids, use `runtimeFunction.named('chat.refresh', fn)`.
+The callback is compile-time syntax. The Metro transformer rewrites it before
+the app runs:
+
+```tsx
+await refreshConversation.runOn('conversation-release-room-runtime', {
+  conversationId: 'release-room',
+});
+```
+
+The runtime function must be exported from a project file so the target runtime
+can find the same code in its own bundle. Metro annotates exported
+`runtimeFunction(...)` declarations with a stable id based on the file path and
+export name, then generates a registration that looks like this:
+
+```tsx
+registerRuntimeFunction(
+  'src/messages.refreshConversation',
+  () => require('./src/messages').refreshConversation,
+);
+```
+
+When `runOn` is called, native sends the target runtime name, function id, and
+JSON arguments to C++/JSI. The target runtime looks up the registered loader,
+caches the loaded function, parses the JSON arguments, calls the function, then
+serializes the returned value back to the caller.
+
+The callback passed to `usingRuntime(...).run(...)` must contain exactly one
+call to one exported runtime function:
+
+```tsx
+await usingRuntime('worker-runtime').run(() => refreshConversation(args));
+```
+
+For explicit stable ids, use `runtimeFunction.named` or
+`runtimeFunction.withId`:
+
+```tsx
+export const refreshConversation = runtimeFunction.named(
+  'chat.refreshConversation',
+  async (args: RefreshConversationArgs) => {
+    // ...
+  },
+);
+```
+
+Current constraints:
+
+- arguments and return values must be JSON-serializable
+- the scheduled function must be exported and registered with `runtimeFunction`
+- inline lambdas and non-exported functions are not scheduled across runtimes
+- closures are not captured; pass all inputs as arguments
+- synchronous functions avoid the extra Promise hop on the target runtime
 
 ## Native Headless Dispatch
 

@@ -12,6 +12,7 @@ module.exports = {
         'threaded-runtime/pass-props',
         'threaded-runtime/prewarming',
         'threaded-runtime/headless-runtime',
+        'threaded-runtime/scheduling-functions',
         'threaded-runtime/business-logic-executor',
       ],
     },

@@ -62,6 +62,8 @@ const messages = await usingRuntime('conversation-worker-runtime').run(() =>
 
 The Metro wrapper assigns the exported function a stable id and rewrites the
 `usingRuntime(...).run(...)` call to dispatch it to the requested runtime.
+See [Scheduling Functions on Another Runtime](./scheduling-functions.md) for the
+full API contract and lookup model.
 
 ## Native Dispatch
 
