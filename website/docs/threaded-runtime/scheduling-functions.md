@@ -37,6 +37,71 @@ It is rewritten to a direct call on the registered runtime function:
 const result = await fibonacci.runOn('fibonacci-worker-runtime', 38);
 ```
 
+For a local top-level function that should always run on one runtime, put the
+runtime name as the first string directive in the function body:
+
+```tsx
+async function sum(a: number, b: number) {
+  'background';
+  return a + b;
+}
+
+const result = await sum(5, 1);
+```
+
+Metro turns that into the same registered runtime function shape:
+
+```tsx
+export const sum_ = runtimeFunction.withId(
+  'src/math.sum_',
+  async function sum(a: number, b: number) {
+    'background';
+    return a + b;
+  },
+);
+
+const sum = call(sum_).on('background');
+const result = await sum(5, 1);
+```
+
+The generated `sum_` export is intentionally private-looking, but it must exist
+so other runtimes can load the function through `require(file).sum_`.
+
+## Fixed Runtime Shortcut
+
+Use a function directive when the function always belongs on the same runtime.
+The directive must be the first statement in a top-level function declaration:
+
+```tsx
+async function refreshCache(key: string) {
+  'background';
+  await cacheStore.hydrate();
+  return cacheStore.get(key);
+}
+
+const value = await refreshCache('settings');
+```
+
+That source keeps call sites ordinary while still scheduling the work on the
+named runtime. Metro generates a hidden exported runtime function and replaces
+the original function with a scheduled alias:
+
+```tsx
+export const refreshCache_ = runtimeFunction.withId(
+  'src/cache.refreshCache_',
+  async function refreshCache(key: string) {
+    'background';
+    await cacheStore.hydrate();
+    return cacheStore.get(key);
+  },
+);
+
+const refreshCache = call(refreshCache_).on('background');
+```
+
+Prefer this shortcut for fixed-runtime helpers. Prefer
+`call(fn).on(runtimeName)(...args)` when the caller should choose the runtime.
+
 ## Why Wrap With `runtimeFunction`?
 
 `runtimeFunction` marks a function as callable from another runtime. It attaches
@@ -55,10 +120,9 @@ objects, or accept values that cannot be serialized. The wrapper is the explicit
 contract that says: this function is exported, registered, accepts JSON inputs,
 returns JSON output, and can be loaded by another runtime.
 
-We can make this lighter later. For example, Metro could transform an exported
-function with a directive or annotation into a runtime function automatically.
-For now the wrapper keeps the behavior visible in source and gives TypeScript the
-right call shape.
+The directive shortcut generates this wrapper for top-level functions that are
+bound to one runtime. Use the explicit wrapper when the same function should be
+callable from different runtimes.
 
 ## How Lookup Works
 
@@ -91,6 +155,17 @@ The primary shape uses `call(fn).on(runtimeName)(...args)`:
 await call(fibonacci).on('fibonacci-worker-runtime')(38);
 ```
 
+For a fixed-runtime helper, use a top-level function directive:
+
+```tsx
+async function sum(a: number, b: number) {
+  'background';
+  return a + b;
+}
+
+await sum(5, 1);
+```
+
 The callback form is still supported when you prefer the runtime-first shape.
 The callback must contain exactly one call to one exported runtime function:
 
@@ -115,9 +190,12 @@ export const fibonacci = runtimeFunction.named(
 Current constraints:
 
 - arguments and return values must be JSON-serializable
-- scheduled functions must be exported and wrapped in `runtimeFunction`
+- scheduled functions must be exported and wrapped in `runtimeFunction`, or use
+  the top-level function directive shortcut
 - inline lambdas and non-exported functions are not supported
 - closures are not captured; pass all inputs as arguments
+- directive shortcut functions are rewritten to `const` aliases, so define them
+  before calling them
 - synchronous functions avoid the extra Promise hop on the target runtime
 
 Use `ThreadedRuntime.runHeadlessTask(...)` instead when the caller only needs to

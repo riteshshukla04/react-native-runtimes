@@ -1,5 +1,11 @@
 const path = require('path');
 
+const IGNORED_FUNCTION_DIRECTIVES = new Set([
+  'use asm',
+  'use strict',
+  'worklet',
+]);
+
 function runtimeFunctionId(filename, projectRoot, exportName) {
   const root = projectRoot ? path.resolve(projectRoot) : process.cwd();
   const extension = path.extname(filename);
@@ -38,6 +44,28 @@ function runtimeFunctionNameFromCall(node) {
 
 function isRuntimeFunctionCall(node) {
   return runtimeFunctionNameFromCall(node) !== undefined;
+}
+
+function runtimeFunctionShortcutName(functionName) {
+  return `${functionName}_`;
+}
+
+function runtimeNameFromFunctionDirective(node) {
+  if (
+    !node ||
+    node.type !== 'FunctionDeclaration' ||
+    !node.id ||
+    !node.body?.directives?.length
+  ) {
+    return null;
+  }
+
+  const runtimeName = node.body.directives[0].value.value;
+  if (!runtimeName || IGNORED_FUNCTION_DIRECTIVES.has(runtimeName)) {
+    return null;
+  }
+
+  return runtimeName;
 }
 
 function shouldTransformFile(filename, projectRoot) {
@@ -144,10 +172,172 @@ function extractCallOnRuntimeCall(node) {
   };
 }
 
+function ensureRuntimeShortcutImports(programPath, t) {
+  const callIdentifier = programPath.scope.generateUidIdentifier('rnrCall');
+  const runtimeFunctionIdentifier =
+    programPath.scope.generateUidIdentifier('rnrRuntimeFunction');
+
+  const importDeclaration = t.importDeclaration(
+    [
+      t.importSpecifier(callIdentifier, t.identifier('call')),
+      t.importSpecifier(
+        runtimeFunctionIdentifier,
+        t.identifier('runtimeFunction'),
+      ),
+    ],
+    t.stringLiteral('@react-native-runtimes/core'),
+  );
+
+  const bodyPaths = programPath.get('body');
+  const lastImportPath = bodyPaths
+    .filter(bodyPath => bodyPath.isImportDeclaration())
+    .at(-1);
+
+  if (lastImportPath) {
+    lastImportPath.insertAfter(importDeclaration);
+  } else {
+    programPath.unshiftContainer('body', importDeclaration);
+  }
+
+  return { callIdentifier, runtimeFunctionIdentifier };
+}
+
+function createRuntimeShortcutStatements({
+  callIdentifier,
+  exportAlias,
+  functionNode,
+  runtimeFunctionIdentifier,
+  runtimeFunctionIdValue,
+  runtimeName,
+  t,
+}) {
+  const originalName = functionNode.id.name;
+  const runtimeFunctionName = runtimeFunctionShortcutName(originalName);
+  const functionExpression = t.functionExpression(
+    t.identifier(originalName),
+    functionNode.params,
+    functionNode.body,
+    functionNode.generator,
+    functionNode.async,
+  );
+  functionExpression.returnType = functionNode.returnType;
+  functionExpression.typeParameters = functionNode.typeParameters;
+
+  const runtimeFunctionDeclaration = t.exportNamedDeclaration(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(runtimeFunctionName),
+        t.callExpression(
+          t.memberExpression(runtimeFunctionIdentifier, t.identifier('withId')),
+          [t.stringLiteral(runtimeFunctionIdValue), functionExpression],
+        ),
+      ),
+    ]),
+  );
+
+  const scheduledFunctionDeclaration = t.variableDeclaration('const', [
+    t.variableDeclarator(
+      t.identifier(originalName),
+      t.callExpression(
+        t.memberExpression(
+          t.callExpression(callIdentifier, [t.identifier(runtimeFunctionName)]),
+          t.identifier('on'),
+        ),
+        [t.stringLiteral(runtimeName)],
+      ),
+    ),
+  ]);
+
+  if (exportAlias) {
+    return [
+      runtimeFunctionDeclaration,
+      t.exportNamedDeclaration(scheduledFunctionDeclaration),
+    ];
+  }
+
+  return [runtimeFunctionDeclaration, scheduledFunctionDeclaration];
+}
+
 module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
   return {
     name: '@react-native-runtimes/runtime-function',
     visitor: {
+      Program(programPath, state) {
+        if (
+          !shouldTransformFile(state.file.opts.filename, state.opts.projectRoot)
+        ) {
+          return;
+        }
+
+        const replacements = [];
+        programPath.get('body').forEach(bodyPath => {
+          let functionPath = bodyPath;
+          let exportAlias = false;
+          if (bodyPath.isExportNamedDeclaration()) {
+            const declarationPath = bodyPath.get('declaration');
+            if (!declarationPath.isFunctionDeclaration()) {
+              return;
+            }
+            functionPath = declarationPath;
+            exportAlias = true;
+          }
+
+          if (!functionPath.isFunctionDeclaration()) {
+            return;
+          }
+
+          const functionNode = functionPath.node;
+          const runtimeName = runtimeNameFromFunctionDirective(functionNode);
+          if (!runtimeName) {
+            return;
+          }
+
+          const originalName = functionNode.id.name;
+          const runtimeFunctionName = runtimeFunctionShortcutName(originalName);
+          if (
+            programPath.scope.hasBinding(runtimeFunctionName) &&
+            runtimeFunctionName !== originalName
+          ) {
+            throw functionPath.buildCodeFrameError(
+              `Runtime function shortcut for "${originalName}" needs generated binding "${runtimeFunctionName}", but that name is already used.`,
+            );
+          }
+
+          replacements.push({
+            bodyPath,
+            exportAlias,
+            functionNode,
+            runtimeFunctionIdValue: runtimeFunctionId(
+              state.file.opts.filename,
+              state.opts.projectRoot,
+              runtimeFunctionName,
+            ),
+            runtimeName,
+          });
+        });
+
+        if (!replacements.length) {
+          return;
+        }
+
+        const { callIdentifier, runtimeFunctionIdentifier } =
+          ensureRuntimeShortcutImports(programPath, t);
+
+        replacements.forEach(replacement => {
+          replacement.bodyPath.replaceWithMultiple(
+            createRuntimeShortcutStatements({
+              callIdentifier,
+              exportAlias: replacement.exportAlias,
+              functionNode: replacement.functionNode,
+              runtimeFunctionIdentifier,
+              runtimeFunctionIdValue: replacement.runtimeFunctionIdValue,
+              runtimeName: replacement.runtimeName,
+              t,
+            }),
+          );
+        });
+      },
+
       ExportNamedDeclaration(pathRef, state) {
         if (
           !shouldTransformFile(state.file.opts.filename, state.opts.projectRoot)

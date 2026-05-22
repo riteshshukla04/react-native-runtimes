@@ -13,6 +13,11 @@ const DEFAULT_IGNORED_DIRS = new Set([
   'ios',
   'node_modules',
 ]);
+const IGNORED_FUNCTION_DIRECTIVES = new Set([
+  'use asm',
+  'use strict',
+  'worklet',
+]);
 
 function withThreadedRuntime(config, options = {}) {
   const projectRoot = path.resolve(
@@ -224,6 +229,36 @@ function scanRuntimeFunctions(file, projectRoot) {
   const runtimeFunctions = [];
 
   traverse(ast, {
+    Program(pathRef) {
+      pathRef.get('body').forEach(bodyPath => {
+        let functionPath = bodyPath;
+        if (bodyPath.isExportNamedDeclaration()) {
+          const declarationPath = bodyPath.get('declaration');
+          if (!declarationPath.isFunctionDeclaration()) {
+            return;
+          }
+          functionPath = declarationPath;
+        }
+
+        if (!functionPath.isFunctionDeclaration()) {
+          return;
+        }
+
+        const functionNode = functionPath.node;
+        const runtimeName = runtimeNameFromFunctionDirective(functionNode);
+        if (!runtimeName) {
+          return;
+        }
+
+        const exportName = runtimeFunctionShortcutName(functionNode.id.name);
+        runtimeFunctions.push({
+          exportName,
+          file,
+          id: runtimeFunctionId(file, projectRoot, exportName),
+        });
+      });
+    },
+
     ExportNamedDeclaration(pathRef) {
       const declaration = pathRef.node.declaration;
       if (!declaration || declaration.type !== 'VariableDeclaration') {
@@ -250,6 +285,28 @@ function scanRuntimeFunctions(file, projectRoot) {
   });
 
   return runtimeFunctions;
+}
+
+function runtimeFunctionShortcutName(functionName) {
+  return `${functionName}_`;
+}
+
+function runtimeNameFromFunctionDirective(node) {
+  if (
+    !node ||
+    node.type !== 'FunctionDeclaration' ||
+    !node.id ||
+    !node.body?.directives?.length
+  ) {
+    return null;
+  }
+
+  const runtimeName = node.body.directives[0].value.value;
+  if (!runtimeName || IGNORED_FUNCTION_DIRECTIVES.has(runtimeName)) {
+    return null;
+  }
+
+  return runtimeName;
 }
 
 function isThreadedComponentCall(node) {
@@ -299,7 +356,9 @@ function explicitRuntimeFunctionId(node) {
 
 function runtimeFunctionId(file, projectRoot, exportName) {
   const withoutExtension = file.slice(0, -path.extname(file).length);
-  return `${toPosixPath(path.relative(projectRoot, withoutExtension))}.${exportName}`;
+  return `${toPosixPath(
+    path.relative(projectRoot, withoutExtension),
+  )}.${exportName}`;
 }
 
 function renderGeneratedEntry({
@@ -347,7 +406,10 @@ function renderGeneratedEntry({
   );
 }
 
-function renderRuntimeFunctionRegistrations({ generatedDir, runtimeFunctions }) {
+function renderRuntimeFunctionRegistrations({
+  generatedDir,
+  runtimeFunctions,
+}) {
   if (!runtimeFunctions.length) {
     return '';
   }
@@ -357,8 +419,12 @@ function renderRuntimeFunctionRegistrations({ generatedDir, runtimeFunctions }) 
       .map(runtimeFunction => {
         const requestPath = toRequirePath(generatedDir, runtimeFunction.file);
         return (
-          `registerRuntimeFunction(${JSON.stringify(runtimeFunction.id)}, () =>\n` +
-          `  require(${JSON.stringify(requestPath)}).${runtimeFunction.exportName},\n` +
+          `registerRuntimeFunction(${JSON.stringify(
+            runtimeFunction.id,
+          )}, () =>\n` +
+          `  require(${JSON.stringify(requestPath)}).${
+            runtimeFunction.exportName
+          },\n` +
           ');'
         );
       })
