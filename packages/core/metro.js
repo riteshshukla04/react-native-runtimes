@@ -14,6 +14,7 @@ const DEFAULT_IGNORED_DIRS = new Set([
   'node_modules',
 ]);
 const IGNORED_FUNCTION_DIRECTIVES = new Set([
+  'threaded',
   'use asm',
   'use strict',
   'worklet',
@@ -57,7 +58,7 @@ function generateThreadedRuntimeEntry({
 }) {
   const root = path.resolve(projectRoot);
   const files = collectSourceFiles(root, roots);
-  const components = files.flatMap(file => scanThreadedComponents(file));
+  const components = files.flatMap(file => scanThreadedComponents(file, root));
   const runtimeFunctions = files.flatMap(file =>
     scanRuntimeFunctions(file, root),
   );
@@ -176,7 +177,7 @@ function walkDirectory(directory, files) {
   });
 }
 
-function scanThreadedComponents(file) {
+function scanThreadedComponents(file, projectRoot) {
   const source = fs.readFileSync(file, 'utf8');
   const ast = parser.parse(source, {
     errorRecovery: true,
@@ -184,8 +185,37 @@ function scanThreadedComponents(file) {
     sourceType: 'module',
   });
   const components = [];
+  const onRuntimeComponentNames = collectOnRuntimeComponentNames(ast);
 
   traverse(ast, {
+    Program(pathRef) {
+      pathRef.get('body').forEach(bodyPath => {
+        let functionPath = bodyPath;
+        if (bodyPath.isExportNamedDeclaration()) {
+          const declarationPath = bodyPath.get('declaration');
+          if (!declarationPath.isFunctionDeclaration()) {
+            return;
+          }
+          functionPath = declarationPath;
+        }
+
+        if (!functionPath.isFunctionDeclaration()) {
+          return;
+        }
+
+        const functionNode = functionPath.node;
+        if (!onRuntimeComponentNames.has(functionNode.id.name)) {
+          return;
+        }
+
+        components.push({
+          exportName: functionNode.id.name,
+          file,
+          name: threadedComponentId(file, projectRoot, functionNode.id.name),
+        });
+      });
+    },
+
     ExportNamedDeclaration(pathRef) {
       const declaration = pathRef.node.declaration;
       if (!declaration || declaration.type !== 'VariableDeclaration') {
@@ -317,6 +347,48 @@ function isThreadedComponentCall(node) {
   return callee.type === 'Identifier' && callee.name === 'threadedComponent';
 }
 
+function onRuntimeChildNameFromJsxElement(node) {
+  if (
+    node.openingElement.name.type !== 'JSXIdentifier' ||
+    node.openingElement.name.name !== 'OnRuntime'
+  ) {
+    return null;
+  }
+
+  const children = node.children.filter(child => {
+    if (child.type === 'JSXText') {
+      return child.value.trim().length > 0;
+    }
+    if (
+      child.type === 'JSXExpressionContainer' &&
+      child.expression.type === 'JSXEmptyExpression'
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  if (children.length !== 1 || children[0].type !== 'JSXElement') {
+    return null;
+  }
+
+  const childName = children[0].openingElement.name;
+  return childName.type === 'JSXIdentifier' ? childName.name : null;
+}
+
+function collectOnRuntimeComponentNames(ast) {
+  const componentNames = new Set();
+  traverse(ast, {
+    JSXElement(pathRef) {
+      const componentName = onRuntimeChildNameFromJsxElement(pathRef.node);
+      if (componentName) {
+        componentNames.add(componentName);
+      }
+    },
+  });
+  return componentNames;
+}
+
 function isRuntimeFunctionCall(node) {
   if (!node || node.type !== 'CallExpression') {
     return false;
@@ -359,6 +431,10 @@ function runtimeFunctionId(file, projectRoot, exportName) {
   return `${toPosixPath(
     path.relative(projectRoot, withoutExtension),
   )}.${exportName}`;
+}
+
+function threadedComponentId(file, projectRoot, exportName) {
+  return runtimeFunctionId(file, projectRoot, exportName);
 }
 
 function renderGeneratedEntry({

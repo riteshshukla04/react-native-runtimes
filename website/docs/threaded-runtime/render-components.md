@@ -3,45 +3,49 @@ id: render-components
 title: Rendering Components On A Background Runtime
 ---
 
-Use `threadedComponent` to mark a component as available to secondary runtimes. Then render it with `Threaded` or `ThreadedScreen`.
+Mount a top-level component inside `OnRuntime`. Metro treats the direct child component as a threaded boundary.
 
 ```tsx
-import {
-  Threaded,
-  ThreadedScreen,
-  threadedComponent,
-} from '@react-native-runtimes/core';
+import { OnRuntime } from '@react-native-runtimes/core';
 
 type MessageListProps = {
   conversationId: string;
   initialIndex?: number;
 };
 
-export const MessageList = threadedComponent<MessageListProps>(
-  'MessageList',
-  function MessageList(props) {
-    return <ActualMessageList {...props} />;
-  },
-);
+function MessageList(props: MessageListProps) {
+  return <ActualMessageList {...props} />;
+}
 
 export function ConversationPreview() {
   return (
-    <Threaded
-      component={MessageList}
-      props={{ conversationId: 'release-room', initialIndex: 120 }}
-      runtimeName="messages-runtime"
-    />
+    <OnRuntime name="messages-runtime">
+      <MessageList conversationId="release-room" initialIndex={120} />
+    </OnRuntime>
   );
 }
 ```
 
-`Threaded` mounts a native `ThreadedRuntimeSurface`. The surface asks the named runtime to render `ThreadedRuntimeHost`, and that host resolves the registered component by name.
+Metro sees `MessageList` as the direct child of `OnRuntime`, rewrites it into the same registration shape as `threadedComponent(...)`, gives it a stable file-based id, and exports it so the generated threaded runtime entry can load it with `require(file).MessageList`.
+
+`OnRuntime` renders a native `ThreadedRuntimeSurface`. The surface asks the named runtime to render `ThreadedRuntimeHost`, and that host resolves the registered component by name.
+
+## Rules
+
+- The `OnRuntime` child must be a direct component reference, such as `<MessageList />`.
+- The child component must be defined at module top level.
+- Keep the component in module/global scope so Metro can generate the registration and the other runtime can require it by name.
+- Props must be JSON-serializable. Pass ids, keys, or small snapshots; read large or mutable data through a shared native store.
+- `OnRuntime` accepts one threaded component child.
+- Because Metro rewrites the function into an exported const, define it before code that calls it during module initialization.
 
 ## Whole Screens
 
 For a whole route, use `ThreadedScreen`. It applies a full-size surface style and preloads the runtime by default.
 
 ```tsx
+import { ThreadedScreen, threadedComponent } from '@react-native-runtimes/core';
+
 type ConversationScreenProps = {
   conversationId: string;
 };
@@ -62,6 +66,27 @@ export const ConversationScreen = threadedComponent<ConversationScreenProps>(
 ```
 
 Keep runtime names stable. If the name changes, native creates or switches to another runtime.
+
+## Explicit Registration
+
+Use `threadedComponent` directly when you want to provide a custom component name or avoid the directive transform.
+
+```tsx
+import { Threaded, threadedComponent } from '@react-native-runtimes/core';
+
+export const MessageList = threadedComponent<MessageListProps>(
+  'MessageList',
+  function MessageList(props) {
+    return <ActualMessageList {...props} />;
+  },
+);
+
+<Threaded
+  component={MessageList}
+  props={{ conversationId: 'release-room', initialIndex: 120 }}
+  runtimeName="messages-runtime"
+/>;
+```
 
 ## When To Use It
 

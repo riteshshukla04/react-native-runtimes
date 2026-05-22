@@ -6,6 +6,7 @@ secondary React Native/Hermes runtime.
 The package owns the JS registry and host API:
 
 - `threadedComponent(name, Component)`
+- `OnRuntime`
 - `Threaded`
 - `ThreadedScreen`
 - `withThreadedRuntime(config, options)` from
@@ -98,12 +99,12 @@ component name.
 
 ### 3. Mark Components And Render Them
 
-Most consumers should make a component opt in once and then render it through a
-secondary runtime like a normal React component.
+Most consumers should mount a top-level component inside `OnRuntime`. Metro
+treats the direct child component as a threaded boundary.
 
 ```tsx
 import {
-  Threaded,
+  OnRuntime,
   ThreadedScreen,
   threadedComponent,
 } from '@react-native-runtimes/core';
@@ -113,25 +114,23 @@ type MessageListProps = {
   initialIndex?: number;
 };
 
-export const MessageList = threadedComponent<MessageListProps>(
-  'MessageList',
-  function MessageList(props) {
-    return <ActualMessageList {...props} />;
-  },
-);
+function MessageList(props: MessageListProps) {
+  return <ActualMessageList {...props} />;
+}
 
-<Threaded
-  component={MessageList}
-  props={{ conversationId, initialIndex: 120 }}
-  runtimeName="messages-runtime"
-/>;
+<OnRuntime name="messages-runtime">
+  <MessageList conversationId={conversationId} initialIndex={120} />
+</OnRuntime>;
 ```
 
-`threadedComponent` is the annotation/marker that says this component may be
-mounted by another runtime. `Threaded` serializes `props` and mounts a native
+Metro sees `MessageList` as the direct child of `OnRuntime` and rewrites it to
+an exported `threadedComponent(...)` registration with a stable file-based id.
+`OnRuntime` serializes the child props and mounts a native
 `ThreadedRuntimeSurface` with the generated component name. Props must be
 JSON-serializable; large or mutable data should be passed by id/key and read
-through a shared native store.
+through a shared native store. Keep inferred components in module/global scope
+so Metro can generate the registration and the other runtime can require them by
+name.
 
 For navigation or chat apps where the whole route should live on another JS
 runtime, use `ThreadedScreen`:
@@ -156,6 +155,9 @@ export const ConversationScreen = threadedComponent<ConversationScreenProps>(
 preloads the named runtime by default, and keeps the runtime alive when the
 screen unmounts. Set `destroyOnUnmount` when the route should release its
 secondary runtime immediately.
+
+Use `threadedComponent` and `Threaded` directly when you want a custom component
+name or need to bypass the directive transform.
 
 You can also prewarm the runtime before rendering the screen:
 

@@ -1,91 +1,24 @@
 ---
 id: business-logic-executor
-title: Business Logic Executor
+title: Background Thread Architecture
 ---
 
-Headless threaded runtimes can act as named business logic executors. Instead of
-mounting UI, the runtime stays warm and receives jobs such as encryption,
-signature verification, document parsing, local search indexing, or data
-normalization.
+Use two JavaScript runtimes for app-lifetime background work:
 
-This is useful when the work is too expensive for the main JS runtime and would
-delay navigation, gestures, or rendering.
+- `main` renders UI and handles user interaction.
+- `background` stays warm and owns sync, caching, queues, parsing, and other
+  non-visual work.
 
-## Model
+The recommended setup is native prewarm plus shared Zustand state. Schedule
+functions with a fixed-runtime directive when a function belongs to only one
+runtime.
 
-Use one or more named runtimes as executors:
+## Native Prewarm
 
-- `crypto-worker-runtime`
-- `search-index-runtime`
-- `sync-engine-runtime`
+Start the background runtime from native app startup. This keeps the runtime
+alive before React screens ask it to do work.
 
-Each executor registers headless tasks. The main runtime or native code
-dispatches jobs by name. Results are written to a shared store, native storage,
-or a native module.
-
-```tsx
-await ThreadedRuntime.prewarm('crypto-worker-runtime');
-
-await ThreadedRuntime.runHeadlessTask('encryptPayload', {
-  runtimeName: 'crypto-worker-runtime',
-  payload: {
-    jobId: 'job-42',
-    keyId: 'local-key-v1',
-    plaintextRef: 'draft-message-123',
-  },
-});
-```
-
-The promise resolves when native accepts the dispatch. Track completion through
-shared state instead of waiting for the dispatch promise.
-
-## App-Lifetime Business Runtime
-
-Some apps use two JavaScript runtimes for the whole app lifetime:
-
-- the main runtime renders UI
-- a business runtime owns sync, caching, queues, crypto orchestration, and other
-  non-visual work
-
-Prewarm that runtime natively during app startup and keep it alive:
-
-```tsx
-await ThreadedRuntime.prewarmBusinessRuntime('business-runtime');
-```
-
-Native injects this global before the bundle runs:
-
-```tsx
-const runtimeEnv = global.__THREADED_RUNTIME_ENV__;
-
-if (runtimeEnv?.kind === 'business-runtime') {
-  require('./src/businessRuntimeEntry');
-} else {
-  require('./src/mainRuntimeEntry');
-}
-```
-
-The injected object has:
-
-```tsx
-type ThreadedRuntimeEnv = {
-  kind: 'threaded-runtime' | 'business-runtime' | string;
-  runtimeName: string;
-  isBackgroundRuntime: boolean;
-  useMainNativeModules: boolean;
-  version: 1;
-};
-```
-
-Use this when one bundle should contain both entrypoints. The business runtime
-can skip UI registration and only register headless tasks, shared-store
-listeners, sync loops, and native-module consumers.
-
-## Native Startup
-
-Android library code cannot directly import the app-generated `PackageList`.
-Pass the main package list once, then prewarm the business runtime with
-`useMainNativeModules=true`:
+Android:
 
 ```kotlin
 import com.facebook.react.PackageList
@@ -100,16 +33,12 @@ class MainApplication : Application(), ReactApplication {
     }
 
     loadReactNative(this)
-    ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "business-runtime")
+    ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "background")
   }
 }
 ```
 
-If you only want a small isolated runtime, use `prewarmRuntime` or pass
-`useMainNativeModules=false`.
-
-iOS threaded runtimes already use the configured React Native delegate for native
-module lookup. Configure the package once and prewarm the business runtime:
+iOS:
 
 ```swift
 import NativeComposeThreadedRuntime
@@ -119,212 +48,138 @@ ThreadedRuntime.configure(
   launchOptions: launchOptions
 )
 
-ThreadedRuntime.prewarmBusinessRuntime("business-runtime")
+ThreadedRuntime.prewarmBusinessRuntime("background")
 ```
 
-The cross-platform JS equivalent is:
+## Shared Zustand Store
 
-```tsx
-await ThreadedRuntime.prewarm('business-runtime', {
-  kind: 'business-runtime',
-  useMainNativeModules: true,
-});
-```
-
-## Store Job State
-
-Keep job status in a shared store so every runtime can observe it.
+Put shared state in `@react-native-runtimes/state` so `main` and `background`
+can both read and write the same data.
 
 ```tsx
 import { createSharedStore } from '@react-native-runtimes/state';
 
-type CryptoJob = {
-  id: string;
-  status: 'queued' | 'running' | 'done' | 'failed';
-  resultRef?: string;
-  error?: string;
+type BusinessState = {
+  business: BusinessSnapshot;
 };
 
-type CryptoState = {
-  jobs: Record<string, CryptoJob>;
+type BusinessSnapshot = {
+  lastRefreshReason: string | null;
+  refreshCount: number;
 };
 
-type CryptoAction =
-  | { type: 'queued'; jobId: string }
-  | { type: 'running'; jobId: string }
-  | { type: 'done'; jobId: string; resultRef: string }
-  | { type: 'failed'; jobId: string; error: string };
+type BusinessAction = {
+  type: 'refreshRequested';
+  reason: string;
+};
 
-export const cryptoJobsStore = createSharedStore<CryptoState, CryptoAction>({
-  name: 'crypto-jobs',
+export const businessStore = createSharedStore<BusinessState, BusinessAction>({
+  name: 'business',
   initialState: {
-    jobs: {},
+    business: {
+      lastRefreshReason: null,
+      refreshCount: 0,
+    },
   },
   slices: {
-    jobs: (jobs, action) => {
-      const current = jobs[action.jobId] ?? {
-        id: action.jobId,
-        status: 'queued',
-      };
-
-      switch (action.type) {
-        case 'queued':
-          return { ...jobs, [action.jobId]: current };
-        case 'running':
-          return { ...jobs, [action.jobId]: { ...current, status: 'running' } };
-        case 'done':
-          return {
-            ...jobs,
-            [action.jobId]: {
-              ...current,
-              status: 'done',
-              resultRef: action.resultRef,
-            },
-          };
-        case 'failed':
-          return {
-            ...jobs,
-            [action.jobId]: {
-              ...current,
-              status: 'failed',
-              error: action.error,
-            },
-          };
+    business: (state, action) => {
+      if (action.type !== 'refreshRequested') {
+        return state;
       }
+
+      return {
+        lastRefreshReason: action.reason,
+        refreshCount: state.refreshCount + 1,
+      };
     },
   },
   persist: {
-    key: 'crypto-jobs-v1',
-    subtrees: ['jobs'],
+    key: 'business-v1',
+    subtrees: ['business'],
   },
 });
 ```
 
-## Register The Executor Task
-
-Register the task in code loaded by the threaded bundle. The task can run JS
-logic directly or call a native module that performs the sensitive or optimized
-part.
+Read it from UI on the main runtime:
 
 ```tsx
-import { NativeModules } from 'react-native';
-import { registerThreadedHeadlessTask } from '@react-native-runtimes/core';
-import { cryptoJobsStore } from './cryptoJobsStore';
+function BusinessStatus() {
+  const state = businessStore.useStore(value => value.business, ['business']);
 
-const { LocalCryptoModule } = NativeModules;
+  return <Text>{state.lastRefreshReason ?? 'idle'}</Text>;
+}
+```
 
-registerThreadedHeadlessTask<{
-  jobId: string;
-  keyId: string;
-  plaintextRef: string;
-}>('encryptPayload', async ({ payload }) => {
-  await cryptoJobsStore.dispatchSubtree(
-    { type: 'running', jobId: payload.jobId },
-    'jobs',
+## Background Functions
+
+For work that should always run on the background runtime, define the function
+in module/global scope and make `'background'` the first statement.
+
+```tsx
+async function refreshBusinessState(reason: string) {
+  'background';
+
+  await businessStore.hydrate();
+  await businessStore.dispatchSubtree(
+    { type: 'refreshRequested', reason },
+    'business',
   );
 
-  try {
-    const resultRef = await LocalCryptoModule.encryptStoredPayload(
-      payload.keyId,
-      payload.plaintextRef,
-    );
+  return businessStore.getSubtreeState('business');
+}
 
-    await cryptoJobsStore.dispatchSubtree(
-      { type: 'done', jobId: payload.jobId, resultRef },
-      'jobs',
-    );
-  } catch (error) {
-    await cryptoJobsStore.dispatchSubtree(
-      {
-        type: 'failed',
-        jobId: payload.jobId,
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'jobs',
-    );
-  }
-});
+const state = await refreshBusinessState('manual');
 ```
 
-For cryptography, prefer native crypto implementations for the actual primitive
-work. Use the headless JS runtime to coordinate the job, choose inputs, call
-native modules, and publish state. Do not pass private keys or large plaintexts
-through JSON props or task payloads; pass ids or storage references.
-
-## Dispatch Jobs From UI
+Metro rewrites that to a registered runtime function and a local scheduled
+alias:
 
 ```tsx
-import { ThreadedRuntime } from '@react-native-runtimes/core';
-import { cryptoJobsStore } from './cryptoJobsStore';
+export const refreshBusinessState_ = runtimeFunction.withId(
+  'src/business.refreshBusinessState_',
+  async function refreshBusinessState(reason: string) {
+    'background';
+    // function body
+  },
+);
 
-async function encryptDraft(draftId: string) {
-  const jobId = `encrypt-${draftId}-${Date.now()}`;
-
-  await cryptoJobsStore.dispatchSubtree({ type: 'queued', jobId }, 'jobs');
-
-  await ThreadedRuntime.runHeadlessTask('encryptPayload', {
-    runtimeName: 'crypto-worker-runtime',
-    payload: {
-      jobId,
-      keyId: 'local-key-v1',
-      plaintextRef: draftId,
-    },
-  });
-
-  return jobId;
-}
+const refreshBusinessState = call(refreshBusinessState_).on('background');
 ```
 
-Subscribe to progress from any runtime:
+## Main Runtime Functions
+
+Use `'main'` for functions that should run on the main runtime. This is useful
+when background work needs to schedule a small UI-owned state update back to the
+main runtime.
 
 ```tsx
-function CryptoJobStatus({ jobId }: { jobId: string }) {
-  const job = cryptoJobsStore.useStore(state => state.jobs[jobId], ['jobs']);
+async function markRefreshVisible(reason: string) {
+  'main';
 
-  if (!job) {
-    return null;
-  }
-
-  return <Text>{job.status}</Text>;
+  await businessStore.dispatchSubtree(
+    { type: 'refreshRequested', reason },
+    'business',
+  );
 }
+
+await markRefreshVisible('background-sync-complete');
 ```
 
-## Dispatch Jobs From Native
+## When To Use This Pattern
 
-Native code can enqueue work before the runtime is ready. The task waits in the
-native queue and flushes when the named runtime starts.
+Use the two-runtime architecture when the background side has app-lifetime work:
 
-Android:
+- sync engines
+- caches and hydration
+- queues
+- local search indexing
+- document parsing
+- crypto orchestration through native modules
 
-```kotlin
-ThreadedRuntime.dispatchHeadlessTask(
-  applicationContext,
-  "crypto-worker-runtime",
-  "encryptPayload",
-  """{"jobId":"job-42","keyId":"local-key-v1","plaintextRef":"draft-123"}""",
-)
-```
+Prefer shared Zustand state for progress and results. Avoid passing large
+payloads through function arguments; pass ids or storage references instead.
 
-iOS:
-
-```swift
-ThreadedRuntime.dispatchHeadlessTask(
-  withRuntimeName: "crypto-worker-runtime",
-  taskName: "encryptPayload",
-  payloadJson: #"{"jobId":"job-42","keyId":"local-key-v1","plaintextRef":"draft-123"}"#
-)
-```
-
-## Operational Guidance
-
-- Prewarm long-lived executors at app startup or before the screen that needs
-  them.
-- Use one runtime for related serial work when ordering matters.
-- Use separate runtimes for independent domains only when the memory overhead is
-  worth it.
-- Keep payloads small and serializable.
-- Store large inputs and outputs by reference.
-- Write progress and results to shared state or native storage.
-- Treat task dispatch as fire-and-observe, not request-response.
-- Avoid JS implementations for security-sensitive crypto primitives unless your
-  threat model explicitly allows it.
+Use `ThreadedRuntime.runHeadlessTask(...)` only for native fire-and-forget jobs
+that must be queued before JavaScript has a convenient caller. For normal JS
+request/response work, prefer the function directive or
+`call(fn).on(runtimeName)(...args)`.

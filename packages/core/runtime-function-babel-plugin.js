@@ -1,6 +1,7 @@
 const path = require('path');
 
 const IGNORED_FUNCTION_DIRECTIVES = new Set([
+  'threaded',
   'use asm',
   'use strict',
   'worklet',
@@ -15,6 +16,10 @@ function runtimeFunctionId(filename, projectRoot, exportName) {
     .split(path.sep)
     .join('/');
   return `${relativePath}.${exportName}`;
+}
+
+function threadedComponentId(filename, projectRoot, exportName) {
+  return runtimeFunctionId(filename, projectRoot, exportName);
 }
 
 function runtimeFunctionNameFromCall(node) {
@@ -84,6 +89,48 @@ function shouldTransformFile(filename, projectRoot) {
     !relativePath.startsWith('..') &&
     !path.isAbsolute(relativePath)
   );
+}
+
+function onRuntimeChildNameFromJsxElement(node) {
+  if (
+    node.openingElement.name.type !== 'JSXIdentifier' ||
+    node.openingElement.name.name !== 'OnRuntime'
+  ) {
+    return null;
+  }
+
+  const children = node.children.filter(child => {
+    if (child.type === 'JSXText') {
+      return child.value.trim().length > 0;
+    }
+    if (
+      child.type === 'JSXExpressionContainer' &&
+      child.expression.type === 'JSXEmptyExpression'
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  if (children.length !== 1 || children[0].type !== 'JSXElement') {
+    return null;
+  }
+
+  const childName = children[0].openingElement.name;
+  return childName.type === 'JSXIdentifier' ? childName.name : null;
+}
+
+function collectOnRuntimeComponentNames(programPath) {
+  const componentNames = new Set();
+  programPath.traverse({
+    JSXElement(jsxPath) {
+      const componentName = onRuntimeChildNameFromJsxElement(jsxPath.node);
+      if (componentName) {
+        componentNames.add(componentName);
+      }
+    },
+  });
+  return componentNames;
 }
 
 function extractRuntimeCall(node) {
@@ -202,6 +249,65 @@ function ensureRuntimeShortcutImports(programPath, t) {
   return { callIdentifier, runtimeFunctionIdentifier };
 }
 
+function ensureThreadedComponentImport(programPath, t) {
+  const threadedComponentIdentifier = programPath.scope.generateUidIdentifier(
+    'rnrThreadedComponent',
+  );
+
+  const importDeclaration = t.importDeclaration(
+    [
+      t.importSpecifier(
+        threadedComponentIdentifier,
+        t.identifier('threadedComponent'),
+      ),
+    ],
+    t.stringLiteral('@react-native-runtimes/core'),
+  );
+
+  const bodyPaths = programPath.get('body');
+  const lastImportPath = bodyPaths
+    .filter(bodyPath => bodyPath.isImportDeclaration())
+    .at(-1);
+
+  if (lastImportPath) {
+    lastImportPath.insertAfter(importDeclaration);
+  } else {
+    programPath.unshiftContainer('body', importDeclaration);
+  }
+
+  return threadedComponentIdentifier;
+}
+
+function createThreadedComponentDeclaration({
+  functionNode,
+  threadedComponentIdentifier,
+  threadedComponentIdValue,
+  t,
+}) {
+  const originalName = functionNode.id.name;
+  const functionExpression = t.functionExpression(
+    t.identifier(originalName),
+    functionNode.params,
+    functionNode.body,
+    functionNode.generator,
+    functionNode.async,
+  );
+  functionExpression.returnType = functionNode.returnType;
+  functionExpression.typeParameters = functionNode.typeParameters;
+
+  return t.exportNamedDeclaration(
+    t.variableDeclaration('const', [
+      t.variableDeclarator(
+        t.identifier(originalName),
+        t.callExpression(threadedComponentIdentifier, [
+          t.stringLiteral(threadedComponentIdValue),
+          functionExpression,
+        ]),
+      ),
+    ]),
+  );
+}
+
 function createRuntimeShortcutStatements({
   callIdentifier,
   exportAlias,
@@ -269,7 +375,10 @@ module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
           return;
         }
 
-        const replacements = [];
+        const onRuntimeComponentNames =
+          collectOnRuntimeComponentNames(programPath);
+        const runtimeShortcutReplacements = [];
+        const threadedComponentReplacements = [];
         programPath.get('body').forEach(bodyPath => {
           let functionPath = bodyPath;
           let exportAlias = false;
@@ -287,6 +396,19 @@ module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
           }
 
           const functionNode = functionPath.node;
+          if (onRuntimeComponentNames.has(functionNode.id.name)) {
+            threadedComponentReplacements.push({
+              bodyPath,
+              functionNode,
+              threadedComponentIdValue: threadedComponentId(
+                state.file.opts.filename,
+                state.opts.projectRoot,
+                functionNode.id.name,
+              ),
+            });
+            return;
+          }
+
           const runtimeName = runtimeNameFromFunctionDirective(functionNode);
           if (!runtimeName) {
             return;
@@ -303,7 +425,7 @@ module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
             );
           }
 
-          replacements.push({
+          runtimeShortcutReplacements.push({
             bodyPath,
             exportAlias,
             functionNode,
@@ -316,20 +438,45 @@ module.exports = function runtimeFunctionBabelPlugin({ types: t }) {
           });
         });
 
-        if (!replacements.length) {
+        if (
+          !runtimeShortcutReplacements.length &&
+          !threadedComponentReplacements.length
+        ) {
           return;
         }
 
-        const { callIdentifier, runtimeFunctionIdentifier } =
-          ensureRuntimeShortcutImports(programPath, t);
+        let threadedComponentIdentifier = null;
+        if (threadedComponentReplacements.length) {
+          threadedComponentIdentifier = ensureThreadedComponentImport(
+            programPath,
+            t,
+          );
+        }
 
-        replacements.forEach(replacement => {
+        let runtimeShortcutImports = null;
+        if (runtimeShortcutReplacements.length) {
+          runtimeShortcutImports = ensureRuntimeShortcutImports(programPath, t);
+        }
+
+        threadedComponentReplacements.forEach(replacement => {
+          replacement.bodyPath.replaceWith(
+            createThreadedComponentDeclaration({
+              functionNode: replacement.functionNode,
+              threadedComponentIdentifier,
+              threadedComponentIdValue: replacement.threadedComponentIdValue,
+              t,
+            }),
+          );
+        });
+
+        runtimeShortcutReplacements.forEach(replacement => {
           replacement.bodyPath.replaceWithMultiple(
             createRuntimeShortcutStatements({
-              callIdentifier,
+              callIdentifier: runtimeShortcutImports.callIdentifier,
               exportAlias: replacement.exportAlias,
               functionNode: replacement.functionNode,
-              runtimeFunctionIdentifier,
+              runtimeFunctionIdentifier:
+                runtimeShortcutImports.runtimeFunctionIdentifier,
               runtimeFunctionIdValue: replacement.runtimeFunctionIdValue,
               runtimeName: replacement.runtimeName,
               t,

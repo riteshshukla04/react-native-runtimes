@@ -40,6 +40,7 @@ import { ChatBubble } from './src/chat/ChatBubble';
 import type { RenderedChatItem } from './src/native/ComposeChatListNativeComponent';
 import {
   call,
+  OnRuntime,
   threadedComponent,
   Threaded,
   ThreadedRuntime,
@@ -1404,17 +1405,15 @@ function SecondRuntimeRnListSurface({
   mode: SecondRuntimeRnBenchmarkMode;
 }) {
   return (
-    <Threaded
+    <OnRuntime
       accessibilityLabel={`second-runtime-${mode}`}
-      component={SecondRuntimeRnListApp}
-      props={{
-        blockStatus: 'second-runtime',
-        mode,
-      }}
+      name="background-list"
       style={styles.secondRuntimeSurface}
       surfaceKey={mode}
       testID={`second-runtime-${mode}`}
-    />
+    >
+      <SecondRuntimeRnListApp blockStatus={blockStatus} mode={mode} />
+    </OnRuntime>
   );
 }
 
@@ -1424,24 +1423,20 @@ type SecondRuntimeRnListAppProps = {
   runtimeName?: string;
 };
 
-export const SecondRuntimeRnListApp =
-  threadedComponent<SecondRuntimeRnListAppProps>(
-    'BenchmarkRnList',
-    function SecondRuntimeRnListApp({
-      blockStatus = 'second-runtime',
-      mode = 'flashlist',
-      runtimeName,
-    }: SecondRuntimeRnListAppProps) {
-      const normalizedMode: SecondRuntimeRnBenchmarkMode =
-        mode === 'legendlist' ? 'legendlist' : 'flashlist';
-      return (
-        <RnListBenchmarkScreen
-          blockStatus={`${blockStatus} / ${runtimeName ?? runtimeKind()}`}
-          mode={normalizedMode}
-        />
-      );
-    },
+export function SecondRuntimeRnListApp({
+  blockStatus = 'second-runtime',
+  mode = 'flashlist',
+  runtimeName,
+}: SecondRuntimeRnListAppProps) {
+  const normalizedMode: SecondRuntimeRnBenchmarkMode =
+    mode === 'legendlist' ? 'legendlist' : 'flashlist';
+  return (
+    <RnListBenchmarkScreen
+      blockStatus={`${blockStatus} / ${runtimeName ?? runtimeKind()}`}
+      mode={normalizedMode}
+    />
   );
+}
 
 function SharedTreeRuntimeScreen() {
   return (

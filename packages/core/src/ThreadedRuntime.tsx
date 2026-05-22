@@ -227,6 +227,15 @@ export type ThreadedScreenProps<Props extends object = Record<string, never>> =
     preload?: boolean;
   };
 
+export type OnRuntimeProps<Props extends object = Record<string, never>> = {
+  accessibilityLabel?: string;
+  children: ReactElement<Props>;
+  name: ThreadedRuntimeName;
+  style?: StyleProp<ViewStyle>;
+  surfaceKey?: string;
+  testID?: string;
+};
+
 export type ThreadedReactSurfaceProps<
   Props extends object = Record<string, never>,
 > = {
@@ -348,6 +357,35 @@ export function Threaded<Props extends object>({
       componentName={component.__threadedRuntime.name}
       initialProps={props}
       runtimeName={runtimeName}
+      style={style}
+      surfaceKey={surfaceKey}
+      testID={testID}
+    />
+  );
+}
+
+export function OnRuntime<Props extends object>({
+  accessibilityLabel,
+  children,
+  name,
+  style,
+  surfaceKey,
+  testID,
+}: OnRuntimeProps<Props>) {
+  const child = React.Children.only(children) as ReactElement<Props>;
+  const component = child.type as ThreadedComponent<Props>;
+
+  if (!component.__threadedRuntime) {
+    console.warn('OnRuntime child must be a threaded component.');
+    return null;
+  }
+
+  return (
+    <Threaded
+      accessibilityLabel={accessibilityLabel}
+      component={component}
+      props={child.props}
+      runtimeName={name}
       style={style}
       surfaceKey={surfaceKey}
       testID={testID}
