@@ -551,13 +551,7 @@ function AppRouteContent({
   }
 
   if (mode === 'flashlist' || mode === 'legendlist') {
-    return (
-      <SecondRuntimeRnListSurface
-        key={mode}
-        blockStatus={blockStatus}
-        mode={mode}
-      />
-    );
+    return <SecondRuntimeRnListSurface key={mode} mode={mode} />;
   }
 
   return null;
@@ -1398,10 +1392,8 @@ function ThreadedChatScreenContent({
 }
 
 function SecondRuntimeRnListSurface({
-  blockStatus,
   mode,
 }: {
-  blockStatus: string;
   mode: SecondRuntimeRnBenchmarkMode;
 }) {
   return (
@@ -1412,7 +1404,7 @@ function SecondRuntimeRnListSurface({
       surfaceKey={mode}
       testID={`second-runtime-${mode}`}
     >
-      <SecondRuntimeRnListApp blockStatus={blockStatus} mode={mode} />
+      <SecondRuntimeRnListApp blockStatus="second-runtime" mode={mode} />
     </OnRuntime>
   );
 }
