@@ -1464,7 +1464,7 @@ function SharedTreeRuntimeScreen() {
         <Threaded
           accessibilityLabel="shared-tree-threaded-panel"
           component={SharedTreeThreadedApp}
-          props={{ interactive: false, runtimeLabel: 'threaded RN' }}
+          props={{ interactive: true, runtimeLabel: 'threaded RN' }}
           runtimeName="shared-tree-runtime"
           style={styles.sharedTreePanel}
           surfaceKey="shared-tree-threaded-panel"
@@ -1566,7 +1566,7 @@ export const SharedTreeThreadedApp =
   threadedComponent<SharedTreeThreadedAppProps>(
     'SharedTreePanel',
     function SharedTreeThreadedApp({
-      interactive = false,
+      interactive = true,
       runtimeLabel = 'threaded RN',
       runtimeName,
     }: SharedTreeThreadedAppProps) {
