@@ -51,6 +51,55 @@ ThreadedRuntime.configure(
 ThreadedRuntime.prewarmBusinessRuntime("background")
 ```
 
+## Background Runtime Entry
+
+Put background-only startup code in a root-level runtime entry file:
+
+```txt
+index.background.ts
+```
+
+The Metro wrapper discovers files named `index.<runtime>.ts` in the project
+root and emits static conditional requires for them. When native starts a
+runtime named `background`, the generated threaded entry loads
+`index.background.ts` inside that runtime only.
+
+Use this file for module-scope work that must exist before native queues are
+flushed:
+
+```tsx title="index.background.ts"
+import { registerThreadedHeadlessTask } from '@react-native-runtimes/core';
+import { business } from './src/businessStore';
+
+registerThreadedHeadlessTask<{ reason: string }>(
+  'business:refresh',
+  async ({ payload }) => {
+    await business.hydrate();
+    await business.update(state => ({
+      lastRefreshReason: payload.reason,
+      refreshCount: state.refreshCount + 1,
+    }));
+  },
+);
+
+void business.hydrate();
+```
+
+Keep UI imports out of `index.background.ts`. Treat it as the background
+runtime bootstrap: register headless tasks, hydrate stores, start app-lifetime
+queues, and install background-only listeners.
+
+The file suffix matches the runtime name. If your native prewarm uses a
+different name, use that same suffix:
+
+```kotlin
+ThreadedRuntime.prewarmBusinessRuntime(applicationContext, "sync-engine")
+```
+
+```txt
+index.sync-engine.ts
+```
+
 ## Shared Zustand Store
 
 Put shared state in `@react-native-runtimes/state` so `main` and `background`
