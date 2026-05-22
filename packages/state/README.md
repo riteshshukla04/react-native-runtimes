@@ -31,7 +31,8 @@ counterStore.dispatch({ type: 'inc' });
 const count = counterStore.useStore(state => state.count);
 ```
 
-Stores can also be split into independently versioned top-level subtrees:
+For shared state that is updated from multiple runtimes, take a native-backed
+path handle from the store:
 
 ```ts
 export const chatStore = createSharedStore({
@@ -41,21 +42,24 @@ export const chatStore = createSharedStore({
     reactions: {},
     settings: { theme: 'dark' },
   },
-  slices: {
-    messages(messages, action) {
-      return reduceMessages(messages, action);
-    },
-    settings(settings, action) {
-      return reduceSettings(settings, action);
-    },
-  },
 });
 
-chatStore.dispatchSubtree('messages', { type: 'append', message });
-chatStore.setSubtreeState('settings', { theme: 'light' });
+const messages = chatStore.path<Record<string, Message[]>>('messages');
+const releaseRoomMessages = chatStore.path<Message[]>([
+  'messages',
+  'release-room',
+]);
+const settings = chatStore.path<{ theme: string }>('settings');
 
-const message = chatStore.useStore(state => state.messages[id], ['messages']);
+await releaseRoomMessages.update(items => [...(items ?? []), message]);
+await settings.set({ theme: 'light' });
+
+const messageCount = releaseRoomMessages.use(items => items?.length ?? 0);
 ```
+
+Path strings and path arrays both become native keys. Subscribers on related
+paths are invalidated together, so a subscriber on `messages` will be notified
+when `messages.release-room` changes.
 
 Enable native persistence when state should survive process restart:
 
@@ -82,14 +86,14 @@ committed to the process-wide singleton.
 ## Runtime model
 
 - State is serialized as JSON at the native boundary.
-- Native storage is a C++ singleton keyed by store name and subtree key.
+- Native storage is a C++ singleton keyed by store name and path key.
 - JS uses the Nitro `SharedZustandStore` HybridObject when it is available and
   falls back to the classic `SharedZustandStore` native module.
-- Each subtree has its own state payload, revision, and lock.
+- Each path has its own state payload, revision, and lock.
 - Each React runtime receives `SharedZustandStoreChanged` native events.
 - Reducers currently run in the JS runtime that calls `dispatch`.
-- Subtree reducers are serialized per subtree by the caller today; the native
-  state commits do not lock unrelated subtrees.
+- Path updates should use one writer per path, or `update(...)` when two
+  runtimes may update the same path.
 - Persisted subtrees are stored as native JSON files and restored during
   hydration before initial state is used.
 

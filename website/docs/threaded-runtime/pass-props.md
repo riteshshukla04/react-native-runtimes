@@ -57,10 +57,9 @@ Pass identity through props, then load or subscribe to the real data inside the 
 
 ```tsx
 function ConversationRoute({ conversationId }: { conversationId: string }) {
-  const messages = messagesStore.useStore(
-    state => state.conversations[conversationId] ?? [],
-    ['conversations'],
-  );
+  const messages = messagesStore
+    .path<Message[]>(['conversations', conversationId])
+    .use(value => value ?? []);
 
   return <MessageList messages={messages} />;
 }

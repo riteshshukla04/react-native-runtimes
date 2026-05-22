@@ -3,135 +3,143 @@ id: multi-runtime-zustand
 title: Multi Runtime Zustand
 ---
 
-`@react-native-runtimes/state` is a small Zustand-like API backed by a native C++ singleton. It lets the main runtime and threaded runtimes read and update shared state without passing large props through the threaded surface.
+`@react-native-runtimes/state` is a small Zustand-like API backed by a native
+C++ singleton. Use it when the main runtime and threaded runtimes need to read
+and update the same state without pushing large props through a threaded
+surface.
 
-Create a store:
+## Dynamic Paths
+
+Create one store, then take native-backed path handles from it:
 
 ```tsx
 import { createSharedStore } from '@react-native-runtimes/state';
 
 type ChatState = {
   conversations: Record<string, Message[]>;
-  metadata: Record<string, { updatedAt: string }>;
+  metadata: Record<string, { updatedAt: string | null }>;
 };
 
-type ChatAction =
-  | { type: 'replaceMessages'; conversationId: string; messages: Message[] }
-  | { type: 'markUpdated'; conversationId: string; updatedAt: string };
-
-export const chatStore = createSharedStore<ChatState, ChatAction>({
+export const chatStore = createSharedStore<ChatState>({
   name: 'chat',
   initialState: {
     conversations: {},
     metadata: {},
   },
-  slices: {
-    conversations: (state, action) => {
-      if (action.type !== 'replaceMessages') {
-        return state;
-      }
-
-      return {
-        ...state,
-        [action.conversationId]: action.messages,
-      };
-    },
-    metadata: (state, action) => {
-      if (action.type !== 'markUpdated') {
-        return state;
-      }
-
-      return {
-        ...state,
-        [action.conversationId]: { updatedAt: action.updatedAt },
-      };
-    },
-  },
 });
+
+export function conversationMessages(conversationId: string) {
+  return chatStore.path<Message[]>(['conversations', conversationId]);
+}
 ```
 
-Subscribe in either runtime:
+The path is the native key. It can be a dot string or an array of segments:
+
+```tsx
+const messages = chatStore.path<Message[]>('conversations.release-room');
+const sameMessages = chatStore.path<Message[]>([
+  'conversations',
+  'release-room',
+]);
+```
+
+## Read And Write
+
+Subscribe from any runtime with `path.use()`:
 
 ```tsx
 function Conversation({ conversationId }: { conversationId: string }) {
-  const messages = chatStore.useStore(
-    state => state.conversations[conversationId] ?? [],
-    ['conversations'],
+  const messages = conversationMessages(conversationId).use(
+    value => value ?? [],
   );
 
   return <MessageList messages={messages} />;
 }
 ```
 
-Dispatch from either runtime:
+Write through the same path handle:
 
 ```tsx
-await chatStore.dispatchSubtree(
-  {
-    type: 'replaceMessages',
-    conversationId,
-    messages,
-  },
-  'conversations',
-);
+const messages = conversationMessages(conversationId);
+
+await messages.set(nextMessages, true);
+await messages.update(current => [...(current ?? []), newMessage]);
 ```
 
-## Subtrees
+The old top-level APIs still work, but new code should prefer `store.path(...)`
+because it supports paths created from ids without declaring every slice up
+front.
 
-Subtrees let independent parts of the store update without locking or rewriting the full state. Prefer subtrees for larger stores:
+## Locking And Revisions
 
-- `conversations`
-- `metadata`
-- `presence`
-- `drafts`
-
-Dispatch to the subtree that owns the change:
+Each path has a native state payload and revision:
 
 ```tsx
-await chatStore.dispatchSubtree(
-  { type: 'markUpdated', conversationId, updatedAt: new Date().toISOString() },
-  'metadata',
-);
+const messages = chatStore.path<Message[]>('conversations.release-room');
+
+await messages.hydrate();
+console.log(messages.getRevision());
 ```
+
+Subscribers are invalidated for related paths. A subscriber on `conversations`
+will be notified when `conversations.release-room` changes, and a subscriber on
+`conversations.release-room` will be notified when `conversations` changes.
+
+Prefer one writer per path. If two runtimes can update the same path, use
+`update(...)` or a path reducer instead of replacing stale snapshots.
 
 ## Persistence
 
-Enable persistence when the state should survive runtime teardown or app restart:
+Enable persistence when state should survive runtime teardown or app restart:
 
 ```tsx
 export const preferencesStore = createSharedStore({
   name: 'preferences',
   initialState: {
-    theme: 'system',
-    density: 'comfortable',
+    counter: { count: 0, updatedAt: null },
   },
   persist: {
     key: 'preferences-v1',
+    subtrees: ['counter'],
   },
 });
+
+export const counter = preferencesStore.path<{
+  count: number;
+  updatedAt: string | null;
+}>('counter');
 ```
 
-For larger stores, persist specific subtrees:
+`persist.subtrees` lists paths that should be eagerly restored during store
+hydration. Dynamic paths that are not listed still hydrate lazily when their
+handle is created or `path.hydrate()` is called.
+
+## Predeclared Subtrees
+
+Use `subtrees` when the store has a small set of known hot paths that should be
+hydrated immediately:
 
 ```tsx
-export const chatStore = createSharedStore({
-  name: 'chat',
-  initialState,
-  slices,
-  persist: {
-    key: 'chat-v1',
-    subtrees: ['metadata', 'drafts'],
+export const pokemonStore = createSharedStore<PokemonState>({
+  name: 'pokemon',
+  initialState: {
+    catalog: initialCatalog,
+    pokemonItems: [],
   },
+  subtrees: ['catalog', 'pokemonItems'],
 });
+
+export const catalog = pokemonStore.path<PokemonState['catalog']>('catalog');
+export const pokemonItems =
+  pokemonStore.path<PokemonState['pokemonItems']>('pokemonItems');
 ```
 
-## Hydration Conflicts
+Use dynamic paths when ids define ownership:
 
-Use clear ownership for writes:
+```tsx
+export const conversationDraft = (conversationId: string) =>
+  chatStore.path<string>(['drafts', conversationId]);
+```
 
-- UI state can be owned by the runtime rendering that UI.
-- Data fetches can be owned by a main runtime producer or a headless threaded runtime.
-- Different subtrees can be written independently.
-- If two runtimes may update the same subtree, use actions/reducers instead of blind replacement.
-
-The native store tracks revisions per subtree. Subscribers receive updates through native events in every active runtime.
+The native store tracks revisions per path. Every active runtime receives
+native change events and updates matching subscribers.

@@ -21,7 +21,9 @@ registerThreadedHeadlessTask<{
 }>('hydrateConversation', async ({ payload, runtimeName }) => {
   const messages = await loadMessages(payload.conversationId, payload.limit);
 
-  await messagesStore.setSubtreeState(payload.conversationId, messages, true);
+  await messagesStore
+    .path<Message[]>(['conversations', payload.conversationId])
+    .set(messages, true);
 
   console.info(`Hydrated ${payload.conversationId} on ${runtimeName}`);
 });
@@ -52,8 +54,13 @@ import { call, runtimeFunction } from '@react-native-runtimes/core';
 
 export const hydrateConversation = runtimeFunction(
   async ({ conversationId }) => {
-    await messagesStore.hydrate();
-    return messagesStore.getSubtreeState(conversationId);
+    const messages = messagesStore.path<Message[]>([
+      'conversations',
+      conversationId,
+    ]);
+
+    await messages.hydrate();
+    return messages.get();
   },
 );
 

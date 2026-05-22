@@ -88,6 +88,14 @@ export const twoRuntimeArchitectureStore =
     },
     subtrees: ['business', 'metrics'],
   });
+export const twoRuntimeBusiness =
+  twoRuntimeArchitectureStore.path<TwoRuntimeArchitectureState['business']>(
+    'business',
+  );
+export const twoRuntimeMetrics =
+  twoRuntimeArchitectureStore.path<TwoRuntimeArchitectureState['metrics']>(
+    'metrics',
+  );
 
 function runtimeKind() {
   const globals = globalThis as {
@@ -123,25 +131,18 @@ async function publishBusinessSnapshot(
   payload: TwoRuntimeBusinessTaskPayload = {},
 ) {
   const now = new Date().toISOString();
-  const currentBusiness =
-    twoRuntimeArchitectureStore.getSubtreeState('business');
+  const currentBusiness = twoRuntimeBusiness.get();
   const nextTick = currentBusiness.ticks + 1;
   const latencyMs = payload.enqueuedAt
     ? Math.max(0, Date.now() - payload.enqueuedAt)
     : currentBusiness.latencyMs;
 
-  await twoRuntimeArchitectureStore.setSubtreeState(
-    'metrics',
-    nextMetrics(
-      twoRuntimeArchitectureStore.getSubtreeState('metrics'),
-      nextTick,
-      now,
-    ),
+  await twoRuntimeMetrics.set(
+    nextMetrics(twoRuntimeMetrics.get(), nextTick, now),
     true,
   );
 
-  await twoRuntimeArchitectureStore.setSubtreeState(
-    'business',
+  await twoRuntimeBusiness.set(
     {
       bootedAt: currentBusiness.bootedAt ?? now,
       lastCommand: command,
@@ -195,15 +196,14 @@ export const syncTwoRuntimeBusinessSnapshot = runtimeFunction(
       ...payload,
       startedBy: payload.startedBy ?? runtimeKind(),
     });
-    return twoRuntimeArchitectureStore.getSubtreeState('business');
+    return twoRuntimeBusiness.get();
   },
 );
 
 export async function startTwoRuntimeBusinessRuntime(startedBy: string) {
-  const current = twoRuntimeArchitectureStore.getSubtreeState('business');
+  const current = twoRuntimeBusiness.get();
   if (current.status === 'cold') {
-    await twoRuntimeArchitectureStore.setSubtreeState(
-      'business',
+    await twoRuntimeBusiness.set(
       {
         ...current,
         lastCommand: 'prewarming business runtime',
@@ -228,9 +228,8 @@ export async function startTwoRuntimeBusinessRuntime(startedBy: string) {
 }
 
 export async function requestTwoRuntimeBusinessSync(command: string) {
-  const current = twoRuntimeArchitectureStore.getSubtreeState('business');
-  await twoRuntimeArchitectureStore.setSubtreeState(
-    'business',
+  const current = twoRuntimeBusiness.get();
+  await twoRuntimeBusiness.set(
     {
       ...current,
       lastCommand: command,

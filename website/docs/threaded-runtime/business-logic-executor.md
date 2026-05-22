@@ -98,13 +98,15 @@ export const businessStore = createSharedStore<BusinessState, BusinessAction>({
     subtrees: ['business'],
   },
 });
+
+export const business = businessStore.path<BusinessSnapshot>('business');
 ```
 
 Read it from UI on the main runtime:
 
 ```tsx
 function BusinessStatus() {
-  const state = businessStore.useStore(value => value.business, ['business']);
+  const state = business.use();
 
   return <Text>{state.lastRefreshReason ?? 'idle'}</Text>;
 }
@@ -119,13 +121,13 @@ in module/global scope and make `'background'` the first statement.
 async function refreshBusinessState(reason: string) {
   'background';
 
-  await businessStore.hydrate();
-  await businessStore.dispatchSubtree(
-    { type: 'refreshRequested', reason },
-    'business',
-  );
+  await business.hydrate();
+  await business.update(state => ({
+    lastRefreshReason: reason,
+    refreshCount: state.refreshCount + 1,
+  }));
 
-  return businessStore.getSubtreeState('business');
+  return business.get();
 }
 
 const state = await refreshBusinessState('manual');
@@ -156,10 +158,10 @@ main runtime.
 async function markRefreshVisible(reason: string) {
   'main';
 
-  await businessStore.dispatchSubtree(
-    { type: 'refreshRequested', reason },
-    'business',
-  );
+  await business.update(state => ({
+    lastRefreshReason: reason,
+    refreshCount: state.refreshCount + 1,
+  }));
 }
 
 await markRefreshVisible('background-sync-complete');
@@ -178,6 +180,8 @@ Use the two-runtime architecture when the background side has app-lifetime work:
 
 Prefer shared Zustand state for progress and results. Avoid passing large
 payloads through function arguments; pass ids or storage references instead.
+Functions that use `'background'` or `'main'` must be declared at module scope,
+so Metro can rewrite and register them before calls are made.
 
 Use `ThreadedRuntime.runHeadlessTask(...)` only for native fire-and-forget jobs
 that must be queued before JavaScript has a convenient caller. For normal JS

@@ -27,7 +27,7 @@ function ConversationPicker() {
     return (
       <ThreadedScreen
         component={ConversationScreen}
-        props={{conversationId: selectedId}}
+        props={{ conversationId: selectedId }}
         runtimeName={`conversation-${selectedId}-runtime`}
       />
     );
@@ -49,13 +49,12 @@ function ConversationPicker() {
 Main runtime fetches data:
 
 ```tsx
+const pokemonItems = pokemonStore.path<PokemonEntry[]>('pokemonItems');
+
 async function fetchMore() {
   const page = await fetchNextPage();
 
-  await pokemonStore.dispatchSubtree(
-    {type: 'appendPage', page},
-    'pokemonItems',
-  );
+  await pokemonItems.update(items => [...items, ...page]);
 }
 ```
 
@@ -65,9 +64,7 @@ Threaded runtime consumes it:
 export const PokemonConsumer = threadedComponent(
   'PokemonConsumer',
   function PokemonConsumer() {
-    const items = pokemonStore.useStore(state => state.pokemonItems, [
-      'pokemonItems',
-    ]);
+    const items = pokemonItems.use();
 
     return <FlatList data={items} renderItem={renderPokemon} />;
   },
@@ -89,7 +86,7 @@ async function prepareAndOpen(conversationId: string) {
     },
   });
 
-  navigation.navigate('Conversation', {conversationId});
+  navigation.navigate('Conversation', { conversationId });
 }
 ```
 

@@ -54,6 +54,8 @@ import {
   requestTwoRuntimeBusinessSync,
   startTwoRuntimeBusinessRuntime,
   twoRuntimeArchitectureStore,
+  twoRuntimeBusiness,
+  twoRuntimeMetrics,
 } from './src/examples/twoRuntimesArchitecture';
 
 type SecondRuntimeRnBenchmarkMode = 'flashlist' | 'legendlist';
@@ -315,6 +317,9 @@ const sharedTreeStore = createSharedStore<SharedTreeState>({
   },
   subtrees: ['nodes', 'interaction'],
 });
+const sharedTreeNodes = sharedTreeStore.path<SharedTreeState['nodes']>('nodes');
+const sharedTreeInteraction =
+  sharedTreeStore.path<SharedTreeState['interaction']>('interaction');
 
 const initialPokemonCatalog: PokemonCatalogState = {
   error: null,
@@ -336,6 +341,10 @@ const pokemonStore = createSharedStore<PokemonSharedState>({
   },
   subtrees: ['catalog', 'pokemonItems'],
 });
+const pokemonCatalog =
+  pokemonStore.path<PokemonSharedState['catalog']>('catalog');
+const pokemonItems =
+  pokemonStore.path<PokemonSharedState['pokemonItems']>('pokemonItems');
 
 const initialHomePersistenceState: HomePersistenceState = {
   counter: {
@@ -355,6 +364,8 @@ const homePersistenceStore = createSharedStore<HomePersistenceState>({
   },
   subtrees: ['counter'],
 });
+const homeCounter =
+  homePersistenceStore.path<HomePersistenceState['counter']>('counter');
 
 function pokemonIdFromUrl(url: string): number {
   const match = url.match(/\/pokemon\/(\d+)\/?$/);
@@ -383,9 +394,8 @@ function formatHomeUpdate(value: string | null): string {
 }
 
 async function incrementHomeCounter(runtimeLabel: string) {
-  const current = homePersistenceStore.getSubtreeState('counter');
-  await homePersistenceStore.setSubtreeState(
-    'counter',
+  const current = homeCounter.get();
+  await homeCounter.set(
     {
       count: current.count + 1,
       updatedAt: new Date().toISOString(),
@@ -396,17 +406,16 @@ async function incrementHomeCounter(runtimeLabel: string) {
 }
 
 async function resetHomeCounter() {
-  await homePersistenceStore.clear('counter');
+  await homeCounter.clear();
 }
 
 async function requestPokemonPage(sourceRuntime: string) {
-  const current = pokemonStore.getSubtreeState('catalog');
+  const current = pokemonCatalog.get();
   if (current.status === 'requested' || current.status === 'loading') {
     return;
   }
 
-  await pokemonStore.setSubtreeState(
-    'catalog',
+  await pokemonCatalog.set(
     {
       ...current,
       error: null,
@@ -790,10 +799,7 @@ function HomeRuntimeScreen() {
 }
 
 function HomeCounterPanel({ runtimeLabel }: { runtimeLabel: string }) {
-  const counter = homePersistenceStore.useStore(
-    state => state.counter,
-    ['counter'],
-  );
+  const counter = homeCounter.use();
   const [hydrationStatus, setHydrationStatus] = useState('hydrated');
   const panelId = useMemo(
     () => runtimeLabel.replace(/[^a-z0-9]+/gi, '-').toLowerCase(),
@@ -824,7 +830,7 @@ function HomeCounterPanel({ runtimeLabel }: { runtimeLabel: string }) {
       <View style={styles.homePanelHeader}>
         <Text style={styles.sharedTreeRuntime}>{runtimeLabel}</Text>
         <Text style={styles.sharedTreeMeta}>
-          rev {homePersistenceStore.getRevision('counter')} / {hydrationStatus}
+          rev {homeCounter.getRevision()} / {hydrationStatus}
         </Text>
       </View>
       <View style={styles.homeCounterBlock}>
@@ -881,14 +887,8 @@ export const HomeThreadedPersistenceApp =
   );
 
 function TwoRuntimesArchitectureScreen() {
-  const business = twoRuntimeArchitectureStore.useStore(
-    state => state.business,
-    ['business'],
-  );
-  const metrics = twoRuntimeArchitectureStore.useStore(
-    state => state.metrics,
-    ['metrics'],
-  );
+  const business = twoRuntimeBusiness.use();
+  const metrics = twoRuntimeMetrics.use();
   const [runtimeNames, setRuntimeNames] = useState<string[]>([]);
 
   const refreshRuntimeNames = useCallback(() => {
@@ -1469,22 +1469,19 @@ function SharedTreePanel({
   interactive?: boolean;
   runtimeLabel: string;
 }) {
-  const nodes = sharedTreeStore.useStore(state => state.nodes, ['nodes']);
-  const interaction = sharedTreeStore.useStore(
-    state => state.interaction,
-    ['interaction'],
-  );
+  const nodes = sharedTreeNodes.use();
+  const interaction = sharedTreeInteraction.use();
 
   async function pressNode(nodeId: SharedTreeNodeId) {
     const currentColor = nodes[nodeId];
     const currentIndex = TREE_COLORS.indexOf(currentColor);
     const nextColor = TREE_COLORS[(currentIndex + 1) % TREE_COLORS.length];
 
-    await sharedTreeStore.setSubtreeState('nodes', {
+    await sharedTreeNodes.set({
       ...nodes,
       [nodeId]: nextColor,
     });
-    await sharedTreeStore.setSubtreeState('interaction', {
+    await sharedTreeInteraction.set({
       lastNode: nodeId,
       lastRuntime: runtimeLabel,
       presses: interaction.presses + 1,
@@ -1611,15 +1608,14 @@ function PokemonProducerPanel() {
 }
 
 function PokemonPageFetcher() {
-  const catalog = pokemonStore.useStore(state => state.catalog, ['catalog']);
+  const catalog = pokemonCatalog.use();
   const activeRequestRef = useRef(0);
 
   async function fetchPokemonPage(request: PokemonCatalogState) {
     const { requestId, requestedOffset } = request;
     activeRequestRef.current = requestId;
 
-    await pokemonStore.setSubtreeState(
-      'catalog',
+    await pokemonCatalog.set(
       {
         ...request,
         error: null,
@@ -1646,21 +1642,20 @@ function PokemonPageFetcher() {
         url: item.url,
       }));
 
-      const latestCatalog = pokemonStore.getSubtreeState('catalog');
+      const latestCatalog = pokemonCatalog.get();
       if (
         latestCatalog.requestId !== requestId ||
         activeRequestRef.current !== requestId
       ) {
         return;
       }
-      const latestItems = pokemonStore.getSubtreeState('pokemonItems');
+      const latestItems = pokemonItems.get();
       const nextItems =
         requestedOffset === 0 ? items : [...latestItems, ...items];
 
-      await pokemonStore.setSubtreeState('pokemonItems', nextItems, true);
+      await pokemonItems.set(nextItems, true);
 
-      await pokemonStore.setSubtreeState(
-        'catalog',
+      await pokemonCatalog.set(
         {
           error: null,
           fetchedAt: new Date().toISOString(),
@@ -1675,7 +1670,7 @@ function PokemonPageFetcher() {
         true,
       );
     } catch (error) {
-      const latest = pokemonStore.getSubtreeState('catalog');
+      const latest = pokemonCatalog.get();
       if (
         latest.requestId !== requestId ||
         activeRequestRef.current !== requestId
@@ -1683,8 +1678,7 @@ function PokemonPageFetcher() {
         return;
       }
 
-      await pokemonStore.setSubtreeState(
-        'catalog',
+      await pokemonCatalog.set(
         {
           ...latest,
           error: error instanceof Error ? error.message : String(error),
@@ -1711,11 +1705,8 @@ function PokemonPageFetcher() {
 }
 
 function PokemonProducerStatus() {
-  const catalog = pokemonStore.useStore(state => state.catalog, ['catalog']);
-  const itemCount = pokemonStore.useStore(
-    state => state.pokemonItems.length,
-    ['pokemonItems'],
-  );
+  const catalog = pokemonCatalog.use();
+  const itemCount = pokemonItems.use(items => items.length);
 
   return (
     <>
@@ -1733,7 +1724,7 @@ function PokemonProducerStatus() {
 
 const PokemonProducerActions = memo(function PokemonProducerActions() {
   const requestNextPage = useCallback(() => {
-    const catalog = pokemonStore.getSubtreeState('catalog');
+    const catalog = pokemonCatalog.get();
     if (catalog.status === 'loading' || catalog.status === 'requested') {
       return;
     }
@@ -1741,7 +1732,7 @@ const PokemonProducerActions = memo(function PokemonProducerActions() {
   }, []);
 
   const clearCatalog = useCallback(() => {
-    const catalog = pokemonStore.getSubtreeState('catalog');
+    const catalog = pokemonCatalog.get();
     if (catalog.status === 'loading' || catalog.status === 'requested') {
       return;
     }
@@ -1771,14 +1762,11 @@ const PokemonProducerActions = memo(function PokemonProducerActions() {
 });
 
 function PokemonProducerPreview() {
-  const pokemonItems = pokemonStore.useStore(
-    state => state.pokemonItems,
-    ['pokemonItems'],
-  );
+  const pokemonItemsState = pokemonItems.use();
 
   return (
     <View style={styles.pokemonPreview}>
-      {pokemonItems.slice(0, 6).map(item => (
+      {pokemonItemsState.slice(0, 6).map(item => (
         <View key={item.id} style={styles.pokemonPreviewChip}>
           <Text style={styles.pokemonPreviewText}>
             #{item.id} {pokemonDisplayName(item.name)}
@@ -1809,9 +1797,8 @@ function useStablePokemonItems(items: PokemonEntry[]) {
 }
 
 async function clearPokemonCatalog(nextRequestId: number) {
-  await pokemonStore.setSubtreeState('pokemonItems', [], true);
-  await pokemonStore.setSubtreeState(
-    'catalog',
+  await pokemonItems.set([], true);
+  await pokemonCatalog.set(
     {
       ...initialPokemonCatalog,
       requestId: nextRequestId,
@@ -1845,7 +1832,7 @@ const PokemonEmptyList = memo(function PokemonEmptyList() {
 const pokemonKeyExtractor = (item: PokemonEntry) => String(item.id);
 
 function PokemonConsumerPanel({ runtimeLabel }: { runtimeLabel: string }) {
-  const catalog = pokemonStore.useStore(state => state.catalog, ['catalog']);
+  const catalog = pokemonCatalog.use();
 
   return (
     <View style={styles.pokemonConsumerPanel}>
@@ -1866,11 +1853,8 @@ const PokemonItemsList = memo(function PokemonItemsList({
 }: {
   runtimeLabel: string;
 }) {
-  const pokemonItems = pokemonStore.useStore(
-    state => state.pokemonItems,
-    ['pokemonItems'],
-  );
-  const stablePokemonItems = useStablePokemonItems(pokemonItems);
+  const pokemonItemsState = pokemonItems.use();
+  const stablePokemonItems = useStablePokemonItems(pokemonItemsState);
   const canRequestMoreAfterScrollRef = useRef(false);
   const lastRequestedItemCountRef = useRef(-1);
   const renderPokemonItem = useCallback(
@@ -1881,30 +1865,30 @@ const PokemonItemsList = memo(function PokemonItemsList({
   );
 
   useEffect(() => {
-    const catalog = pokemonStore.getSubtreeState('catalog');
-    if (pokemonItems.length > 0 || catalog.status !== 'idle') {
+    const catalog = pokemonCatalog.get();
+    if (pokemonItemsState.length > 0 || catalog.status !== 'idle') {
       return;
     }
     lastRequestedItemCountRef.current = 0;
     requestPokemonPage(runtimeLabel);
-  }, [pokemonItems.length, runtimeLabel]);
+  }, [pokemonItemsState.length, runtimeLabel]);
 
   const requestMoreFromThreadedRuntime = useCallback(() => {
-    const catalog = pokemonStore.getSubtreeState('catalog');
+    const catalog = pokemonCatalog.get();
     if (
-      pokemonItems.length === 0 ||
+      pokemonItemsState.length === 0 ||
       catalog.status === 'requested' ||
       catalog.status === 'loading' ||
       !canRequestMoreAfterScrollRef.current ||
-      lastRequestedItemCountRef.current === pokemonItems.length
+      lastRequestedItemCountRef.current === pokemonItemsState.length
     ) {
       return;
     }
 
     canRequestMoreAfterScrollRef.current = false;
-    lastRequestedItemCountRef.current = pokemonItems.length;
+    lastRequestedItemCountRef.current = pokemonItemsState.length;
     requestPokemonPage(runtimeLabel);
-  }, [pokemonItems.length, runtimeLabel]);
+  }, [pokemonItemsState.length, runtimeLabel]);
 
   const markRequestMoreAllowed = useCallback(() => {
     canRequestMoreAfterScrollRef.current = true;
