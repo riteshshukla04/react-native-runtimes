@@ -13,7 +13,7 @@
 [![iOS](https://img.shields.io/badge/iOS-supported-000000?style=flat-square&logo=apple)](https://developer.apple.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-[📖 Docs](https://szymon20000.github.io/react-native-runtimes/) · [⚡ Quick Start](#getting-started) · [📦 Core](packages/core/README.md) · [🗂 State](packages/state/README.md)
+[📖 Docs](https://runtime.riteshshukla.in/) · [⚡ Quick Start](#getting-started) · [📦 Core](packages/core/README.md) · [🗂 State](packages/state/README.md)
 
 </div>
 
