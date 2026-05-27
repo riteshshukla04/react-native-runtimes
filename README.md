@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://szymon20000.github.io/react-native-runtimes/img/logo.svg" width="96" alt="react-native-runtimes logo" />
+<img src="./assets/image.png" width="96" alt="react-native-runtimes logo" />
 
 # react-native-runtimes
 
