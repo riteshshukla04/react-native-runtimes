@@ -296,7 +296,7 @@ export default function App() {
 
 ## Documentation
 
-- 📖 [Hosted docs](https://szymon20000.github.io/react-native-runtimes/)
+- 📖 [Hosted docs](https://runtime.riteshshukla.in/)
 - 📦 [Core package — full API reference](packages/core/README.md)
 - 🗂 [State package — shared store API](packages/state/README.md)
 - 🧪 [Example app](example)
