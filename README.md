@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/image.png" width="96" alt="react-native-runtimes logo" />
+<img src="./assets/image.png"  width="600" height ="300" alt="react-native-runtimes logo" />
 
 # react-native-runtimes
 
