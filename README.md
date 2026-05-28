@@ -43,7 +43,7 @@ React Native gives your product one main JavaScript runtime. When a feed, chat s
 ## What it unlocks
 
 | If your app has... | You can move... | Main runtime keeps... |
-|---|---|
+|---|---|---|
 | A chat, feed, or inbox that janks on mount | The expensive list or route surface | Navigation, gestures, and input |
 | Reducers or stores competing with animation | Business logic in a long-lived runtime | Frame-critical UI work |
 | Slow first-open screens | A prewarmed runtime before the user taps | Predictable navigation latency |
