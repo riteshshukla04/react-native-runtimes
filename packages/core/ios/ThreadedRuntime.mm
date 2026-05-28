@@ -1,6 +1,7 @@
 #import "ThreadedRuntime.h"
 
 #import <React/RCTConvert.h>
+#import <React/RCTFabricSurface.h>
 #import <React/RCTLog.h>
 #import <React/RCTUtils.h>
 #import <React-RCTAppDelegate/RCTAppSetupUtils.h>
@@ -493,7 +494,9 @@ static NSDictionary *configuredLaunchOptions;
   NSString *normalizedAppName = appName.length > 0 ? appName : ThreadedRuntimeDefaultHostAppName;
   RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
   [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
-  return [host createSurfaceWithModuleName:normalizedAppName initialProperties:properties ?: @{}];
+  return [[RCTFabricSurface alloc] initWithSurfacePresenter:host.surfacePresenter
+                                                 moduleName:normalizedAppName
+                                          initialProperties:properties ?: @{}];
 }
 
 + (void)startRuntimeAndFlushWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host
