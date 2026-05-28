@@ -494,9 +494,14 @@ static NSDictionary *configuredLaunchOptions;
   NSString *normalizedAppName = appName.length > 0 ? appName : ThreadedRuntimeDefaultHostAppName;
   RCTHost *host = [self ensureHostWithRuntimeName:normalizedRuntimeName];
   [self startRuntimeAndFlushWithRuntimeName:normalizedRuntimeName host:host];
-  return [[RCTFabricSurface alloc] initWithSurfacePresenter:host.surfacePresenter
-                                                 moduleName:normalizedAppName
-                                          initialProperties:properties ?: @{}];
+  RCTFabricSurface *surface =
+      [[RCTFabricSurface alloc] initWithSurfacePresenter:host.surfacePresenter
+                                              moduleName:normalizedAppName
+                                       initialProperties:properties ?: @{}];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [surface start];
+  });
+  return surface;
 }
 
 + (void)startRuntimeAndFlushWithRuntimeName:(NSString *)runtimeName host:(RCTHost *)host
