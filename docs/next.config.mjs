@@ -7,6 +7,4 @@ const config = {
   reactStrictMode: true,
 };
 
-
-
 export default withMDX(config);
