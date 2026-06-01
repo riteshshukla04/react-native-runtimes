@@ -2,7 +2,7 @@ import { ArrowRight } from 'lucide-react';
 
 export function MargeloBanner() {
   return (
-    <div className="rounded-lg border bg-fd-card p-3 text-xs">
+    <div className="mt-6 rounded-lg border bg-fd-card p-3 text-xs">
       <p className="font-semibold text-fd-card-foreground">
         React Native Runtimes is built with{' '}
         <span aria-hidden="true">❤️</span> by Margelo
