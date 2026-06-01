@@ -1,4 +1,4 @@
 {
   "title": "Guides",
-  "pages": ["when-to-use", "performance-tips", "troubleshooting"]
+  "pages": ["when-to-use", "vs-worklets", "performance-tips", "troubleshooting"]
 }

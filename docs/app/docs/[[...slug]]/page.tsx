@@ -8,6 +8,7 @@ import {
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/mdx-components';
 import { LLMCopyButton, ViewOptions } from '@/components/page-actions';
+import { MargeloBanner } from '@/components/margelo-banner';
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -26,7 +27,7 @@ export default async function Page(props: {
     <DocsPage
       toc={page.data.toc}
       full={page.data.full}
-      tableOfContent={{ style: 'clerk' }}
+      tableOfContent={{ style: 'clerk', footer: <MargeloBanner /> }}
       editOnGithub={{
         owner,
         repo,
