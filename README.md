@@ -19,6 +19,22 @@
 
 ---
 
+<div align="center">
+
+<a href="https://margelo.com"><picture><source media="(prefers-color-scheme: dark)" srcset="./assets/margelo_light.svg"><img src="./assets/margelo_dark.svg" height="48" align="middle" alt="Margelo" /></picture></a>
+&nbsp;&nbsp;&nbsp;&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="./assets/x_light.svg"><img src="./assets/x_dark.svg" height="18" align="middle" alt="✕" /></picture>&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://www.callstack.com"><picture><source media="(prefers-color-scheme: dark)" srcset="./assets/callstack_light.svg"><img src="./assets/callstack_dark.svg" height="40" align="middle" alt="Callstack" /></picture></a>
+
+<br/>
+
+**react-native-runtimes** is built in collaboration with our friends at **[Callstack](https://www.callstack.com)**
+
+<sub>We love fast apps ⚡ and cars 🏎️</sub>
+
+</div>
+
+---
+
 ## What is this?
 
 React Native gives your product one main JavaScript runtime. When a feed, chat screen, editor, reducer, or hydration job monopolizes that runtime, input, animation, and navigation all start competing for the same VM.

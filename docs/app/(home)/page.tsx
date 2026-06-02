@@ -212,6 +212,74 @@ export function ConversationPreview() {
           </div>
         </div>
       </section>
+
+      <section className="border-t bg-fd-muted/30">
+        <div className="mx-auto flex max-w-4xl flex-col items-center gap-6 px-6 py-16 text-center">
+          <p className="text-xs font-medium uppercase tracking-widest text-fd-muted-foreground">
+            Built in collaboration with
+          </p>
+          <div className="flex items-center gap-8">
+            <a
+              href="https://margelo.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:opacity-80"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/margelo_dark.svg"
+                alt="Margelo"
+                className="h-12 w-auto dark:hidden"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/margelo_light.svg"
+                alt="Margelo"
+                className="hidden h-12 w-auto dark:block"
+              />
+            </a>
+            <span className="text-xl font-semibold text-fd-muted-foreground">
+              ✕
+            </span>
+            <a
+              href="https://www.callstack.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:opacity-80"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/callstack_dark.svg"
+                alt="Callstack"
+                className="h-9 w-auto dark:hidden"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/callstack_light.svg"
+                alt="Callstack"
+                className="hidden h-9 w-auto dark:block"
+              />
+            </a>
+          </div>
+          <p className="max-w-xl text-sm text-fd-muted-foreground">
+            <span className="font-medium text-fd-foreground">
+              react-native-runtimes
+            </span>{' '}
+            is built in collaboration with our friends at{' '}
+            <a
+              href="https://www.callstack.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-fd-primary hover:underline"
+            >
+              Callstack
+            </a>
+            .
+            <br />
+            We love fast apps ⚡ and Cars 🏎️
+          </p>
+        </div>
+      </section>
     </main>
   );
 }
