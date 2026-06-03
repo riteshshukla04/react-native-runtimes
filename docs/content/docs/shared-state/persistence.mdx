@@ -26,14 +26,14 @@ export const counter = preferencesStore.path<{
 }>('counter');
 ```
 
-`persist.subtrees` lists paths that should be **eagerly restored** during
-store hydration. Dynamic paths that are not listed still hydrate lazily when
-their handle is created or `path.hydrate()` is called.
+`persist.subtrees` lists the exact subtree keys that are written to disk.
+**Paths not listed are not persisted at all** — they share state across
+runtimes but reset on app restart.
 
-<Callout type="info" title="Choosing persist.key">
-  The persist key is part of your durable schema. Bump the suffix
-  (`preferences-v1` → `preferences-v2`) when you change shapes in a way that
-  isn't backwards-compatible.
+<Callout type="info" title="Versioning the schema">
+  Set `persist.version` (default `1`) and bump it when the persisted shape
+  changes in a way that isn't backwards-compatible — the on-disk key includes
+  the version, so old files are simply ignored.
 </Callout>
 
 ## How it works under the hood
@@ -67,8 +67,8 @@ The **calling runtime's JS thread**. Not the platform main / UI thread, but
 also *not* a dedicated I/O thread:
 
 1. `JSON.stringify` runs synchronously on whichever runtime called `set`.
-2. The native `setState` call is synchronous (Nitro) — it writes the full
-   file before returning.
+2. The native state write and the persist-to-disk call are both synchronous
+   (Nitro) — the file is written before the call returns.
 3. The change notification is published only after the write completes.
 
 That means a multi-megabyte payload written from the **UI runtime** will
@@ -99,12 +99,20 @@ a persisted path:
 The native store keeps an integer revision per entry, bumped on every
 `setState`. Revisions are **not** persisted — they reset to 0 on app launch
 and exist so subscribers can detect missed updates within a session.
-See [Locking and revisions](/docs/shared-state/locking-and-revisions).
+See [Concurrency and revisions](/docs/shared-state/locking-and-revisions).
 
-## Predeclared subtrees
+## `subtrees` vs `persist.subtrees`
 
-Use `subtrees` when the store has a small set of known hot paths that should
-be hydrated immediately:
+These are two different options that are easy to confuse:
+
+| Option | What it controls |
+| --- | --- |
+| `subtrees` | **Eager hydration.** Listed subtrees hydrate immediately at store creation instead of lazily on first access. Nothing is written to disk. |
+| `persist.subtrees` | **Persistence.** Listed subtrees are written to disk and restored on restart. |
+
+The top-level `subtrees` option is **not** persistence — see
+[Paths](/docs/shared-state/paths#listing-the-surface) for the eager-hydration
+counterpart. To both hydrate eagerly *and* persist, set both:
 
 ```tsx
 export const pokemonStore = createSharedStore<PokemonState>({
@@ -113,30 +121,20 @@ export const pokemonStore = createSharedStore<PokemonState>({
     catalog: initialCatalog,
     pokemonItems: [],
   },
-  subtrees: ['catalog', 'pokemonItems'],
+  subtrees: ['catalog', 'pokemonItems'], // hydrate eagerly
+  persist: {
+    key: 'pokemon-v1',
+    subtrees: ['catalog'], // also save 'catalog' to disk
+  },
 });
-
-export const catalog = pokemonStore.path<PokemonState['catalog']>('catalog');
-export const pokemonItems =
-  pokemonStore.path<PokemonState['pokemonItems']>('pokemonItems');
 ```
-
-Use dynamic paths when ids define ownership:
-
-```tsx
-export const conversationDraft = (conversationId: string) =>
-  chatStore.path<string>(['drafts', conversationId]);
-```
-
-The native store tracks revisions per path. Every active runtime receives
-native change events and updates matching subscribers.
 
 ## Patterns
 
 | You want… | Do this |
 | --- | --- |
 | A few preferences saved across launches | `persist.subtrees: ['theme', 'auth', 'counter']` |
-| Per-conversation drafts that survive restart | Dynamic paths under a persisted root: `['drafts', id]` |
+| Per-conversation drafts that survive restart | Persist the `'drafts'` subtree together and update the whole object on each change — while you can specify individual paths like `['drafts', 'conv123']` in `persist.subtrees`, each unique value requires its own entry at store creation time, so dynamic conversation IDs cannot be persisted individually this way. A single shared subtree is simpler and more efficient |
 | A huge cache that must hydrate eagerly | Add it to `subtrees` and accept the cold-start cost |
 | A huge cache that can hydrate on first use | Don't list it — call `path.hydrate()` from the screen that needs it |
 

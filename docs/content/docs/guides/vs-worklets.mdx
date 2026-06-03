@@ -1,33 +1,76 @@
 ---
 title: Comparison with react-native-worklets
-description: How named secondary runtimes differ from Software Mansion's worklets, including Bundle Mode.
+description: How React Native Runtimes differs from Software Mansion's worklets, and when to reach for each.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 [react-native-worklets](https://docs.swmansion.com/react-native-worklets/docs/fundamentals/getting-started/)
 (Software Mansion) and React Native Runtimes both run JavaScript off the main
-runtime, but they solve different problems with different execution models.
-
-## At a glance
-
-| # | Aspect | react-native-worklets | react-native-runtimes |
-| --- | --- | --- | --- |
-| 1 | **What runs on the other thread** | Short-running functions marked `'worklet'`. A Babel plugin "workletizes" them — extracts the function and its captured closure into a serializable object that is *copied* onto the worklet runtime. | Ordinary JS — full React component trees and whole screens. Each runtime has access to **all core React Native components** (plus any registered native module), which is what makes it possible to render complete UI on a background thread. |
-| 2 | **Rendering & shadow tree** | ❌ Worklet runtimes can't mount React trees. UI-thread worklets (Reanimated) mutate the **main tree's ShadowNodes**, so they are subject to main-runtime commit locks. | ✅ [`<OnRuntime>` / `ThreadedScreen`](/docs/threaded-runtime/render-components) run a real React renderer per runtime with **its own shadow tree — no shared ShadowNodes**, so background runtimes are **never blocked by main-runtime locks**. |
-| 3 | **Bundle & module access** | By default worklets only see their workletized closure — third-party imports need patches. Full-bundle access requires the **experimental [Bundle Mode](https://docs.swmansion.com/react-native-worklets/docs/bundleMode)** (`react-native-worklets@bundle-mode-preview`, Babel `bundleMode: true`, temporary Metro patches). Even then, third-party libraries must be allowlisted via `workletizableModules`, and `fetch` requires a separate feature flag. | Full bundle access **is the default and only mode** — Metro generates `.threaded-runtime/entry.js`, every runtime loads a complete bundle, so any JS import or third-party library just works. **Native modules need a one-time registration** in `MainApplication.kt` — [`setExtraReactPackagesProvider`](/docs/getting-started/android-setup) for threaded UI runtimes, `setMainReactPackagesProvider` for business runtimes. |
-| 4 | **App startup** | Worklet runtimes are created from JS (`createWorkletRuntime`) **after** the main bundle has loaded — startup work stays serialized behind the main runtime. | Secondary runtimes can be **started when the app process starts** ([`prewarmBusinessRuntime`](/docs/threaded-runtime/business-logic-executor) / [`prewarm`](/docs/threaded-runtime/prewarming)), so app initialization, hydration, and first-screen prep run **in parallel with main-runtime startup**. |
-| 5 | **Cross-thread state & communication** | Shared values / Shareables plus `scheduleOnUI` / `scheduleOnRN` (formerly `runOnJS`, now deprecated); captured data is copied (serialized) between runtimes per call. | JSON-serialized props/args, typed [`call(fn).on('runtime')`](/docs/threaded-runtime/scheduling-functions), [headless tasks](/docs/threaded-runtime/headless-runtime), plus [`@react-native-runtimes/state`](/docs/shared-state/overview) — a C++-singleton-backed Zustand-style store with **synchronous reads/writes from every runtime**. |
+runtime, but they solve different problems and use different execution models.
 
 <Callout type="info" title="Complementary, not competing">
   Worklets win for synchronous, frame-precise work on the UI thread —
   animations and gestures, where Reanimated is built on them. React Native
-  Runtimes wins for moving entire screens, React trees, and app-startup or
-  business logic off the main JS thread. Many apps benefit from using both.
+  Runtimes wins when you need to move entire screens, React trees, or
+  app-startup and business logic off the main JS thread. Many apps benefit
+  from using both.
 </Callout>
+
+## When react-native-runtimes makes sense
+
+Three architectures, from the quickest to adopt to the most complete.
+
+### 1. Move critical Component to another thread
+
+If your application is too complex to migrate to a full two-runtime
+architecture, a good interim solution is to move only the critical parts — a
+long list or charts, for instance — onto another thread.
+
+The main runtime keeps ownership of navigation and the rest of the screen;
+only the component that drops frames moves off it with
+[`<OnRuntime>`](/docs/threaded-runtime/render-components). See the
+[LegendList on a runtime](/docs/recipes/legend-list-on-runtime) recipe for a
+complete example.
+
+### 2. Split rendering across two threads
+
+If your JS thread is already optimized but you still hit rendering-time
+limits, it's worth splitting the render across two threads. In a chat app, the
+conversation drawer can render on one runtime and the chat feed on another —
+heavy re-renders in the feed can never delay the drawer, and vice versa.
+
+See the [chat on a secondary runtime](/docs/recipes/chat-on-secondary-runtime)
+recipe for a complete example.
+
+### 3. Separate business logic from rendering
+
+The final — and optimal — architecture: business logic lives on one runtime,
+rendering on another.
+
+Ever wondered why LegendList and FlashList are so fast in their example apps?
+Because nothing on the JS thread can interrupt them. That is exactly what this
+architecture achieves in a real app.
+
+When the app process starts, two runtimes start in parallel: the main React
+Native runtime and a
+[background runtime](/docs/threaded-runtime/business-logic-executor) that you
+prewarm from native at launch. The
+background runtime has access to all native modules — it can fetch fresh data,
+hold a WebSocket connection, and read from databases. Meanwhile, the much
+lighter rendering runtime serves cached data (for instance through the
+[shared store](/docs/shared-state/overview)) without ever being interrupted by
+business logic.
+
+## Should I spin up 10 runtimes to compute something faster?
+
+No. Each runtime is a full React Native environment — it loads the entire
+bundle, runs a React renderer, and registers native modules. That makes
+runtimes the wrong tool for raw parallel computation. Use
+[react-native-worklets](https://docs.swmansion.com/react-native-worklets/docs/fundamentals/getting-started/)
+for that instead 🙂
 
 ## Sources
 
 - [Worklets — Getting started](https://docs.swmansion.com/react-native-worklets/docs/fundamentals/getting-started/)
-- [Worklets — Glossary](https://docs.swmansion.com/react-native-worklets/docs/fundamentals/glossary)
-- [Worklets — Bundle Mode](https://docs.swmansion.com/react-native-worklets/docs/bundleMode), [setup](https://docs.swmansion.com/react-native-worklets/docs/bundleMode/setup), and [usage](https://docs.swmansion.com/react-native-worklets/docs/bundleMode/usage) (allowlisting via `workletizableModules`, `fetch` feature flag)
+- [Worklets — Runtime kinds](https://docs.swmansion.com/react-native-worklets/docs/fundamentals/runtimeKinds) (RN / UI / Worker runtimes)

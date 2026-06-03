@@ -8,8 +8,8 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 Use two JavaScript runtimes for app-lifetime background work:
 
-- `main` renders UI and handles user interaction.
-- `background` stays warm and owns sync, caching, queues, parsing, and other non-visual work.
+- The main runtime renders UI and handles user interaction.
+- A `background` runtime stays warm and owns sync, caching, queues, parsing, and other non-visual work.
 
 The recommended setup is native prewarm plus shared Zustand state. Schedule
 functions with a fixed-runtime directive when a function belongs to only one
@@ -46,8 +46,6 @@ class MainApplication : Application(), ReactApplication {
 <Tab value="iOS (Swift)">
 
 ```swift
-import NativeComposeThreadedRuntime
-
 ThreadedRuntime.configure(
   withReactNativeDelegate: delegate,
   launchOptions: launchOptions
@@ -84,6 +82,7 @@ registerThreadedHeadlessTask<{ reason: string }>(
   async ({ payload }) => {
     await business.hydrate();
     await business.update(state => ({
+      ...state,
       lastRefreshReason: payload.reason,
       refreshCount: state.refreshCount + 1,
     }));
@@ -182,6 +181,7 @@ async function refreshBusinessState(reason: string) {
 
   await business.hydrate();
   await business.update(state => ({
+    ...state,
     lastRefreshReason: reason,
     refreshCount: state.refreshCount + 1,
   }));
@@ -207,24 +207,25 @@ export const refreshBusinessState_ = runtimeFunction.withId(
 const refreshBusinessState = call(refreshBusinessState_).on('background');
 ```
 
-## Main runtime functions
+## Getting results back to main
 
-Use `'main'` for functions that should run on the main runtime. This is
-useful when background work needs to schedule a small UI-owned state update
-back to the main runtime:
+Don't schedule functions *onto* the main runtime — write results to the
+shared store from the background runtime and let main subscribe:
 
 ```tsx
-async function markRefreshVisible(reason: string) {
-  'main';
+// Background runtime writes:
+await business.set(snapshot, true);
 
-  await business.update(state => ({
-    lastRefreshReason: reason,
-    refreshCount: state.refreshCount + 1,
-  }));
+// Main runtime UI re-renders automatically:
+function BusinessStatus() {
+  const state = business.use();
+  return <Text>{state.lastRefreshReason ?? 'idle'}</Text>;
 }
-
-await markRefreshVisible('background-sync-complete');
 ```
+
+For request/response work initiated by main, the return value of an awaited
+runtime function already comes back to the caller — no extra scheduling step
+is needed.
 
 ## When to use this pattern
 
@@ -244,8 +245,8 @@ work:
   instead. The serialization cost dominates real work otherwise.
 </Callout>
 
-Functions that use `'background'` or `'main'` must be declared at module
-scope so Metro can rewrite and register them before calls are made.
+Directive functions must be declared at module scope so Metro can rewrite and
+register them before calls are made.
 
 Use `ThreadedRuntime.runHeadlessTask(...)` only for native fire-and-forget
 jobs that must be queued before JavaScript has a convenient caller. For

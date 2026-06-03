@@ -60,10 +60,11 @@ Subscribers fire for **related paths**, not only exact matches:
 That makes broad subscriptions ("anything under conversations changed") cheap
 to express.
 
-<Callout title="One writer per path is the rule of thumb" type="info">
-  If two runtimes can both write to the same path, prefer `update(...)` or a
-  reducer — they read the current value through the lock and write back, so
-  concurrent updates compose instead of clobbering each other.
+<Callout title="One writer per path is the rule" type="warn">
+  Writes are last-writer-wins — there is no compare-and-swap. `update(...)`
+  reads the runtime's local mirror of the value, so two runtimes writing the
+  same path concurrently can still clobber each other. Design so each path has
+  a single writing runtime; other runtimes read and subscribe.
 </Callout>
 
 ## When to reach for it instead of props

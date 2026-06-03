@@ -3,8 +3,6 @@ title: Performance tips
 description: Practical advice for getting the most out of threaded runtimes and shared state.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 ## Prewarm what the user will see next
 
 Prewarming a runtime is cheap if it's already warm and one-time-expensive if
@@ -29,15 +27,13 @@ Every prop change crosses the threaded boundary as JSON. Pass ids, cursors,
 and config values — not full datasets. Use [shared state](/docs/shared-state/overview)
 for anything large or mutable.
 
-<Callout type="warn" title="A 1 MB prop is a 1 MB serialization cost on every change">
-  And every change re-serializes it. Push large data through a shared path
-  and pass only its identity through props.
-</Callout>
-
 ## Prefer `update` over `set` for derived writes
 
-When a write depends on the current value, use `update`. It reads under the
-native lock and writes back atomically — no two-runtime race.
+When a write depends on the current value, use `update`. It reads your local
+value and writes it back. Like plain `set()`, it races if another runtime
+writes between the read and write, but it's still preferred over read-then-set
+for the same local copy. Design your app to have one writer per path instead
+of relying on atomicity.
 
 ```tsx
 await messages.update(current => [...(current ?? []), newMessage]);

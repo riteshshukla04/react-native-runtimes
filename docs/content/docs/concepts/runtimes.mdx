@@ -14,9 +14,10 @@ const RUNTIME_NAME = 'messages-runtime';
 ```
 
 When you ask for `messages-runtime` to render something, native spawns the
-runtime (if it doesn't already exist), executes the same bundle inside it,
-loads `.threaded-runtime/entry` to register components and functions, and then
-mounts a `ThreadedRuntimeHost` that renders the requested component.
+runtime (if it doesn't already exist) and executes the same bundle inside it.
+The bundle's `index.js` requires `.threaded-runtime/entry`, which registers
+components and functions, and native then mounts a `ThreadedRuntimeHost` that
+renders the requested component.
 
 ## Naming runtimes
 
@@ -59,7 +60,6 @@ A runtime can be implicitly started by any of these:
 - Mounting `<ThreadedScreen runtimeName="..." />` (auto-prewarms)
 - Calling `ThreadedRuntime.runHeadlessTask` with that runtime name
 - Calling `call(fn).on('...')(...)`
-- Native dispatch: `ThreadedRuntime.dispatchHeadlessTask`
 
 ## Cost
 
@@ -79,15 +79,19 @@ runtimes by their logical owner:
 
 ## Discovery
 
-Inside any threaded runtime, two globals describe where you are:
+Use `getCurrentRuntime()` to find out which runtime your code is running on:
 
 ```ts
-declare const __THREADED_RUNTIME_ENV__: {
-  kind: 'main' | 'threaded' | 'business';
-  runtimeName: string;
-};
+import { getCurrentRuntime, isMainRuntime } from '@react-native-runtimes/core';
+
+const { isMain, name, kind } = getCurrentRuntime();
+// main runtime:       { isMain: true,  name: 'main',             kind: null }
+// threaded runtime:   { isMain: false, name: 'messages-runtime', kind: 'threaded-runtime' }
+// business runtime:   { isMain: false, name: 'background',       kind: 'business-runtime' }
 ```
 
-This is how the per-runtime bootstrap mechanism works — the generated entry
-checks `runtimeName` and conditionally requires `index.<runtime>.ts`. See
+Under the hood, native sets a `__THREADED_RUNTIME_ENV__` global (with
+`runtimeName` and `kind`) in every secondary runtime before the bundle
+evaluates. The generated entry uses it to conditionally require
+`index.<runtime>.ts`. See
 [Metro setup](/docs/getting-started/metro-setup#per-runtime-bootstrap-files).

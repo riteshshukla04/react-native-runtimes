@@ -36,12 +36,12 @@ function SharedTreePanel({ runtimeLabel }: { runtimeLabel: string }) {
     await nodes.set({
       ...nodeColors,
       [nodeId]: nextColor(nodeColors[nodeId]),
-    });
+    }, true);
     await interaction.set({
       lastNode: nodeId,
       lastRuntime: runtimeLabel,
       presses: currentInteraction.presses + 1,
-    });
+    }, true);
   }
 
   return <Tree nodes={nodeColors} onPressNode={pressNode} />;

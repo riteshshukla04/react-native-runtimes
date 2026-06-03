@@ -116,13 +116,12 @@ nativecompose::threadedruntime::dispatchHeadlessTask(
 );
 ```
 
-Native dispatch is queued — if the target runtime is still starting, the
-runtime flushes the task once it's ready. The returned status reflects whether
-the dispatch was accepted, not whether the JS body has finished.
+Dispatch is fire-and-forget: the task is queued, the runtime is started if
+needed, and queued tasks are flushed once the runtime is ready.
 
 ## Common issues
 
-<Callout type="warn" title="`Could not find Nitro module`">
+<Callout type="warn" title="`Cannot create an instance of HybridObject ... It has not yet been registered`">
   Add `NitroModulesPackage()` to `setExtraReactPackagesProvider` and make sure
   the package is also in your normal host packages (so the main runtime can
   use it too).

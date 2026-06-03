@@ -28,9 +28,9 @@ main runtime                       messages-runtime
        (native view)                     (real component)
 ```
 
-The boundary is a native view, not a JS bridge. Props cross it once, then the
-threaded runtime owns rendering, scheduling, and re-rendering for that
-subtree.
+The boundary is a native view, not a JS bridge. Props cross it once at mount
+(changing them later remounts the surface), then the threaded runtime owns
+rendering, scheduling, and re-rendering for that subtree.
 
 ## Direct child rule
 
@@ -58,6 +58,10 @@ subtree.
 Metro needs a stable, file-based reference to register. It rewrites the direct
 child into an exported `const` and registers it under a stable id.
 
+Auto-registration only sees **function declarations in the same file** as the
+`<OnRuntime>` usage. For a component imported from another file, export it
+wrapped in `threadedComponent('name', Component)` instead.
+
 <Callout title="When the direct child rule feels restrictive" type="info">
   Use `threadedComponent` to give the component an explicit id, then put any
   wrapper you like *inside* that component. The registered component is the
@@ -66,8 +70,8 @@ child into an exported `const` and registers it under a stable id.
 
 ## Props cross the boundary as JSON
 
-Props are serialized at the main runtime and deserialized on the threaded
-runtime. They must be JSON-safe:
+Props are serialized at the main runtime when the surface mounts and
+deserialized on the threaded runtime. They must be JSON-safe:
 
 - ✅ Strings, numbers, booleans, `null`
 - ✅ Plain objects and arrays of the above

@@ -33,9 +33,10 @@ ThreadedRuntime.dispatchHeadlessTask(
 
 | Platform | Call |
 | --- | --- |
-| Android (Kotlin) | `ThreadedRuntime.dispatchHeadlessTask(context, name, task, payload)` |
+| Android (Kotlin) | `ThreadedRuntime.dispatchHeadlessTask(context, runtimeName, taskName, payloadJson)` |
 | iOS (Swift) | `ThreadedRuntime.dispatchHeadlessTask(withRuntimeName:taskName:payloadJson:)` |
-| C++ | `nativecompose::threadedruntime::dispatchHeadlessTask(...)` |
+| C++ (Android) | `nativecompose::threadedruntime::dispatchHeadlessTask(env, context, runtimeName, taskName, payloadJson)` |
+| C++ (iOS) | `nativecompose::threadedruntime::dispatchHeadlessTask(runtimeName, taskName, payloadJson)` |
 
 See [Headless background runtime](/docs/threaded-runtime/headless-runtime) for
 the full native-dispatch reference.

@@ -9,11 +9,11 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 Check, in order:
 
-1. **`index.js` loads the generated entry.** It must require `.threaded-runtime/entry` when `global.__THREADED_RUNTIME_ENV__` is set. See [Metro setup](/docs/getting-started/metro-setup).
+1. **`index.js` loads the generated entry.** It must require `.threaded-runtime/entry` unconditionally (in every runtime). See [Metro setup](/docs/getting-started/metro-setup).
 2. **The component is at module scope.** Inline or nested components aren't registered.
 3. **The Metro plugin sees the file.** It must be under one of the configured `roots` in `metro.config.js`.
 
-## "Could not find Nitro module" on Android
+## "Cannot create an instance of HybridObject" on Android
 
 Add `NitroModulesPackage()` (and `ThreadedZustandPackage()` if you use shared
 state) to `setExtraReactPackagesProvider` in your `MainApplication`. See
@@ -49,7 +49,7 @@ hook, or [native startup](/docs/threaded-runtime/prewarming#native-prewarm).
 ## Two runtimes overwrite each other's writes
 
 Use `update(fn)` or a path reducer instead of `set(value)`. See
-[Locking and revisions](/docs/shared-state/locking-and-revisions#concurrent-writers).
+[Concurrency and revisions](/docs/shared-state/locking-and-revisions#concurrent-writers).
 
 ## `'background'` directive isn't being rewritten
 

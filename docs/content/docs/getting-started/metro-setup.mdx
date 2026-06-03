@@ -17,11 +17,6 @@ const config = {};
 
 module.exports = withThreadedRuntime(
   mergeConfig(getDefaultConfig(__dirname), config),
-  {
-    roots: ['App.tsx', 'src'],
-    generatedDir: '.threaded-runtime',
-    generatedEntry: 'entry.js',
-  },
 );
 ```
 
@@ -29,25 +24,24 @@ module.exports = withThreadedRuntime(
 
 | Option | Default | What it controls |
 | --- | --- | --- |
-| `roots` | `['App.tsx', 'src']` | Files and folders Metro scans for `OnRuntime`, `threadedComponent`, `runtimeFunction`, and directive functions. |
-| `generatedDir` | `.threaded-runtime` | Where the generated entry and the registration tables are written. Add this folder to `.gitignore`. |
+| `roots` | `['App.tsx', 'src']` | Files and folders scanned for `OnRuntime`, `threadedComponent`, `runtimeFunction`, and directive functions. |
+| `generatedDir` | `.threaded-runtime` | Where the generated entry is written. Add this folder to `.gitignore`. |
 | `generatedEntry` | `entry.js` | Filename of the generated entry inside `generatedDir`. |
+| `projectRoot` | Metro's `projectRoot` | Base directory for scanning and for generated ids. |
 
 ## Loading the generated entry
 
 The generated entry registers component loaders, runtime functions, and the
-`ThreadedRuntimeHost` root. It must be loaded **only inside secondary
-runtimes**, never on the main runtime:
+`ThreadedRuntimeHost` root. Require it at the top of `index.js` so it runs in
+**every** runtime:
 
 ```js title="index.js"
-if (global.__THREADED_RUNTIME_ENV__ || global._is_it_a_list_env === true) {
-  require('./.threaded-runtime/entry');
-}
+require('./.threaded-runtime/entry');
 ```
 
-The two globals exist for backwards compatibility — both indicate the bundle
-is being evaluated in a secondary runtime. New code should rely on
-`__THREADED_RUNTIME_ENV__`.
+Component registrations are lazy (`() => require(...)`), so this adds nothing
+to main-runtime startup. Loading it on main is required for the JSI function
+dispatch mechanism, which enables calling functions on secondary runtimes.
 
 ## .gitignore
 
@@ -66,12 +60,12 @@ root-level file with the runtime's name:
 index.background.ts
 ```
 
-The Metro plugin discovers files matching `index.<runtime>.ts(x)` in the
-project root and emits a static conditional require. When native starts a
-runtime named `background`, the generated entry loads `index.background.ts`
-inside that runtime only.
+The Metro plugin discovers files matching `index.<runtime>.ts` in the project
+root and emits a static conditional require. The generated entry loads
+`index.background.ts` only inside runtimes whose **name or kind** is
+`background`.
 
-```tsx title="index.background.ts"
+```ts title="index.background.ts"
 import { registerThreadedHeadlessTask } from '@react-native-runtimes/core';
 import { business } from './src/businessStore';
 
@@ -80,6 +74,7 @@ registerThreadedHeadlessTask<{ reason: string }>(
   async ({ payload }) => {
     await business.hydrate();
     await business.update(state => ({
+      ...state,
       lastRefreshReason: payload.reason,
       refreshCount: state.refreshCount + 1,
     }));
@@ -107,11 +102,6 @@ index.sync-engine.ts
 ```
 
 ## Troubleshooting
-
-<Callout type="warn" title="Metro picks up the generated entry on the main runtime">
-  Double-check the `if (global.__THREADED_RUNTIME_ENV__ ...)` guard in your
-  `index.js`. The generated entry is large and should never load on main.
-</Callout>
 
 <Callout type="warn" title="A threaded component isn't being registered">
   Add its file to `roots` or place it under one of the existing roots. Files

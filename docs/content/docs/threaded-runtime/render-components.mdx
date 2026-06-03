@@ -1,5 +1,5 @@
 ---
-title: Rendering components on a background runtime
+title: Rendering components on a secondary runtime
 description: Use OnRuntime, ThreadedScreen, and threadedComponent to mount React components on a named secondary runtime.
 ---
 
@@ -34,16 +34,15 @@ the same registration shape as `threadedComponent(...)`, gives it a stable
 file-based id, and exports it so the generated threaded runtime entry can load
 it with `require(file).MessageList`.
 
-`OnRuntime` renders a native `ThreadedRuntimeSurface`. The surface asks the
-named runtime to render `ThreadedRuntimeHost`, and that host resolves the
-registered component by name.
+`OnRuntime` renders a `ThreadedReactSurface` component, which is backed by a
+native surface. The surface asks the named runtime to render
+`ThreadedRuntimeHost`, and that host resolves the registered component by name.
 
 ## Rules
 
 - The `OnRuntime` child must be a direct component reference, such as `<MessageList />`.
-- The child component must be defined at module top level.
-- Keep the component in module/global scope so Metro can generate the registration and the other runtime can require it by name.
-- Props must be JSON-serializable. Pass ids, keys, or small snapshots; read large or mutable data through a [shared store](/docs/shared-state/overview).
+- The child component must be a function declaration at module top level, **in the same file** as the `<OnRuntime>` usage. For components imported from other files, use `threadedComponent` instead.
+- Props must be JSON-serializable, and they are mount-time only — changing them [remounts the surface](/docs/threaded-runtime/pass-props). Pass ids and keys; read large or mutable data through a [shared store](/docs/shared-state/overview).
 - `OnRuntime` accepts one threaded component child.
 - Because Metro rewrites the function into an exported const, define it before code that calls it during module initialization.
 
@@ -86,8 +85,8 @@ another runtime.
 
 ## Explicit registration
 
-Use `threadedComponent` directly when you want to provide a custom component
-name or avoid the directive transform:
+Use `threadedComponent` directly when the component lives in its own file, or
+when you want to control the registration name:
 
 ```tsx
 import { Threaded, threadedComponent } from '@react-native-runtimes/core';

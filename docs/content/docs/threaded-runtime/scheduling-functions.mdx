@@ -93,7 +93,7 @@ be the first statement in the function body:
 async function refreshCache(key: string) {
   'background';
   await cacheStore.hydrate();
-  return cacheStore.get(key);
+  return cacheStore.getPathState(key);
 }
 
 const value = await refreshCache('settings');
@@ -109,7 +109,7 @@ export const refreshCache_ = runtimeFunction.withId(
   async function refreshCache(key: string) {
     'background';
     await cacheStore.hydrate();
-    return cacheStore.get(key);
+    return cacheStore.getPathState(key);
   },
 );
 
@@ -206,12 +206,11 @@ export const fibonacci = runtimeFunction.named(
 ## Current constraints
 
 - arguments and return values must be JSON-serializable
-- scheduled functions must be exported and wrapped in `runtimeFunction`, or use the top-level function directive shortcut
-- directive shortcut functions must be declared in module/global scope
-- inline lambdas and non-exported functions are not supported
+- `runtimeFunction(...)` values must be exported at module scope; directive functions only need to be declared at module scope
+- the directive must name a **secondary** runtime — scheduling onto the main runtime is not supported
+- inline lambdas are not supported
 - closures are not captured; pass all inputs as arguments
 - directive shortcut functions are rewritten to `const` aliases, so define them before calling them
-- synchronous functions avoid the extra Promise hop on the target runtime
 
 <Callout type="info" title="Fire-and-forget vs. await">
   Use `ThreadedRuntime.runHeadlessTask(...)` when the caller only needs to

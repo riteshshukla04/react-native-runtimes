@@ -6,6 +6,8 @@ description: Prewarm a runtime per conversation, then open the screen on the rig
 import { Callout } from 'fumadocs-ui/components/callout';
 
 ```tsx
+const conversations = [{ id: 'room-1' }, { id: 'room-2' }];
+
 const CHAT_RUNTIME_NAMES = conversations.map(
   conversation => `conversation-${conversation.id}-runtime`,
 );

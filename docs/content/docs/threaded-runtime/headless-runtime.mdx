@@ -126,7 +126,7 @@ ThreadedRuntime.dispatchHeadlessTask(
 
 nativecompose::threadedruntime::dispatchHeadlessTask(
   env,
-  applicationContext,
+  context, // jobject reference to an android.content.Context
   "conversation-worker-runtime",
   "hydrateConversation",
   R"({"conversationId":"release-room","limit":50})"

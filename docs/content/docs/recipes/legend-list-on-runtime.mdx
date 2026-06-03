@@ -10,7 +10,7 @@ the main runtime. Pass identity through props, then read the large data set
 directly inside the threaded runtime.
 
 ```tsx
-function MessageList({ conversationId }: { conversationId: string }) {
+export function MessageList({ conversationId }: { conversationId: string }) {
   const messages = useDatabaseQuery(() =>
     db.messages
       .where('conversationId')
@@ -33,11 +33,11 @@ function MessageList({ conversationId }: { conversationId: string }) {
 </OnRuntime>;
 ```
 
-Metro treats the direct child of `OnRuntime` as a threaded boundary and
-registers it in the generated threaded entry. Native mounts
-`ThreadedRuntimeHost` in `messages-runtime`, and that runtime renders the
-list. The main runtime does not serialize the message array; it only passes
-the conversation id.
+Metro treats the direct child of `OnRuntime` as a threaded boundary, rewrites
+it into an exported registration, and registers it in the generated threaded
+entry. Native mounts `ThreadedRuntimeHost` in `messages-runtime`, and that
+runtime renders the list. The main runtime does not serialize the message
+array; it only passes the conversation id.
 
 The sample app includes this as **Legend 2RN**.
 

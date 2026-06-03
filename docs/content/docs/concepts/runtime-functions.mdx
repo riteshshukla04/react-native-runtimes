@@ -19,8 +19,8 @@ target runtime, called by stable id, with JSON-serialized arguments.
 ```tsx
 import { call, runtimeFunction } from '@react-native-runtimes/core';
 
-export const fibonacci = runtimeFunction((n: number) => {
-  return fib(n);
+export const fibonacci = runtimeFunction((n: number): number => {
+  return n <= 1 ? n : fibonacci(n - 1) + fibonacci(n - 2);
 });
 
 const result = await call(fibonacci).on('worker-runtime')(38);
@@ -35,15 +35,17 @@ runtimes, or against different worker pools.
 async function refreshCache(key: string) {
   'background';
   await cacheStore.hydrate();
-  return cacheStore.get(key);
+  return cacheStore.getPathState(key);
 }
 
 const value = await refreshCache('settings');
 ```
 
-The first directive (`'background'`, `'main'`, or any runtime name) is the
-target. Metro rewrites the function into a registered runtime function plus a
-local scheduled alias, so call sites stay ordinary.
+The first directive (`'background'` or any other secondary runtime name) is
+the target. Metro rewrites the function into a registered runtime function
+plus a local scheduled alias, so call sites stay ordinary. Directives target
+**secondary** runtimes — to get data back to the main runtime, return a value
+or write to [shared state](/docs/shared-state/overview).
 
 <Callout type="info" title="Use the directive for fixed-runtime helpers">
   When a function semantically belongs to one runtime, the directive form
@@ -63,10 +65,12 @@ Code is never sent over the wire. Only **id + args**.
 ## Constraints
 
 - Arguments and return values must be JSON-serializable.
-- The function must be **exported** and wrapped in `runtimeFunction` *or* use a top-level directive.
-- Directive functions must be declared at module scope.
-- Closures aren't captured — pass everything through arguments.
-- Inline lambdas and non-exported functions are not supported.
+- `runtimeFunction(...)` values must be **exported** at module scope. Directive
+  functions only need to be declared at module scope — Metro exports the
+  generated registration for you.
+- Closures aren't captured — pass everything through arguments (module-scope
+  imports work, since every runtime loads the same bundle).
+- Inline lambdas are not supported.
 
 See [Scheduling functions on another runtime](/docs/threaded-runtime/scheduling-functions)
 for the full API.

@@ -55,11 +55,6 @@ const config = {};
 
 module.exports = withThreadedRuntime(
   mergeConfig(getDefaultConfig(__dirname), config),
-  {
-    roots: ['App.tsx', 'src'],
-    generatedDir: '.threaded-runtime',
-    generatedEntry: 'entry.js',
-  },
 );
 ```
 
@@ -73,15 +68,14 @@ Then add the generated folder to `.gitignore`:
 
 <Step>
 
-### Load the generated entry inside threaded runtimes
+### Load the generated entry
 
-Add this to your `index.js` so the threaded entry is only required when the
-file is loaded inside a secondary runtime:
+Require the generated entry at the top of `index.js`. It runs in every
+runtime — component requires stay lazy, so it adds nothing to main-runtime
+startup:
 
 ```js title="index.js"
-if (global.__THREADED_RUNTIME_ENV__ || global._is_it_a_list_env === true) {
-  require('./.threaded-runtime/entry');
-}
+require('./.threaded-runtime/entry');
 ```
 
 </Step>
@@ -93,9 +87,13 @@ if (global.__THREADED_RUNTIME_ENV__ || global._is_it_a_list_env === true) {
 <Tabs items={['iOS', 'Android']}>
 <Tab value="iOS">
 
-```swift title="AppDelegate.swift"
-import NativeComposeThreadedRuntime
+Expose `ThreadedRuntime` to Swift via your bridging header:
 
+```objc title="MyApp-Bridging-Header.h"
+#import <NativeComposeThreadedRuntime/ThreadedRuntime.h>
+```
+
+```swift title="AppDelegate.swift"
 ThreadedRuntime.configure(
   withReactNativeDelegate: delegate,
   launchOptions: launchOptions
@@ -148,10 +146,15 @@ class MainApplication : Application(), ReactApplication {
 
 ```tsx title="App.tsx"
 import { OnRuntime } from '@react-native-runtimes/core';
+import { Text, View } from 'react-native';
 
 function MessageList({ conversationId }: { conversationId: string }) {
   // This entire component runs on 'messages-runtime'.
-  return <ActualMessageList conversationId={conversationId} />;
+  return (
+    <View>
+      <Text>Rendering {conversationId} on a second JS runtime</Text>
+    </View>
+  );
 }
 
 export default function App() {
@@ -180,15 +183,14 @@ your UI.
 <Callout type="success" title="Next step">
   Now read [the installation reference](/docs/getting-started/installation) for
   prewarming, headless tasks, and the Metro options — or jump straight to
-  [Rendering components on a background runtime](/docs/threaded-runtime/render-components).
+  [Rendering components on a secondary runtime](/docs/threaded-runtime/render-components).
 </Callout>
 
 ## Troubleshooting
 
 <Callout type="warn" title="Nothing renders on the secondary runtime">
-  Make sure your `index.js` loads `.threaded-runtime/entry` when
-  `global.__THREADED_RUNTIME_ENV__` is set, and that your component is defined
-  at module scope (not inside another component).
+  Make sure your `index.js` requires `./.threaded-runtime/entry`, and that
+  your component is defined at module scope (not inside another component).
 </Callout>
 
 <Callout type="warn" title="Build error mentioning Nitro">

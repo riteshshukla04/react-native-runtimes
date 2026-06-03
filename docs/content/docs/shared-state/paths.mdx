@@ -45,7 +45,7 @@ const count = messages.use(list => list?.length ?? 0);
 ```
 
 The hook handles subscription cleanup. Subscriptions also fan out to **parent
-paths** — see [Locking and revisions](/docs/shared-state/locking-and-revisions).
+paths** — see [Concurrency and revisions](/docs/shared-state/locking-and-revisions).
 
 ## Writing
 
@@ -56,14 +56,15 @@ await messages.update(current => [...(current ?? []), newMessage]);
 
 | Method | What it does | When to use |
 | --- | --- | --- |
-| `set(value)` | Replace the value at this path | When the new value is computed without reading current |
-| `set(value, true)` | Replace and broadcast immediately | For path writes that should not be batched with other updates |
-| `update(fn)` | Read-modify-write under the lock | When the new value depends on the current one |
+| `set(value)` or `set((current) => nextValue)` | Shallow-merges plain objects; arrays, null, and other non-plain-object values are replaced entirely | Partial updates or computed updates |
+| `set(value, true)` | Replaces the value at this path | When the new value is complete |
+| `update(fn)` | Computes the next value from the runtime's current copy and replaces it | When the new value depends on the current one |
 
-<Callout type="warn" title="Prefer update over set when value depends on current">
-  `update` reads the current value through the native lock and writes back
-  atomically. With `set`, two writers can clobber each other if they both
-  read-then-write outside the lock.
+<Callout type="warn" title="Writes are last-writer-wins">
+  `update` reads this runtime's local copy of the value — it is **not** an
+  atomic cross-runtime read-modify-write. If two runtimes write the same path
+  concurrently, the last write wins. Keep one writing runtime per path; other
+  runtimes read and subscribe.
 </Callout>
 
 ## Revisions

@@ -59,7 +59,7 @@ function openConversation(conversationId: string) {
 Prewarm from native code for runtimes that should exist before any JS runs —
 typically your `background` runtime or a chat inbox.
 
-<Tabs items={['Android (Kotlin)', 'iOS (Swift)', 'C++']}>
+<Tabs items={['Android (Kotlin)', 'iOS (Swift)', 'Android (C++)', 'Apple (C++ / Obj-C++)']}>
 
 <Tab value="Android (Kotlin)">
 
@@ -78,7 +78,33 @@ ThreadedRuntime.prewarmRuntime("conversation-release-room-runtime")
 ```
 
 </Tab>
-<Tab value="C++">
+<Tab value="Android (C++)">
+
+```cpp
+#include <nativecompose/threadedruntime/ThreadedRuntimeDispatcher.h>
+
+nativecompose::threadedruntime::prewarmRuntime(
+  env,
+  context, // jobject reference to an android.content.Context
+  "conversation-release-room-runtime",
+  "threaded-runtime",
+  false
+);
+```
+
+For a `business-runtime` that needs the main runtime's native modules, use the
+convenience wrapper:
+
+```cpp
+nativecompose::threadedruntime::prewarmBusinessRuntime(
+  env,
+  context,
+  "conversation-release-room-runtime"
+);
+```
+
+</Tab>
+<Tab value="Apple (C++ / Obj-C++)">
 
 ```cpp
 #include <nativecompose/threadedruntime/ThreadedRuntimeDispatcher.h>
