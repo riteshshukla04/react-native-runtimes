@@ -46,8 +46,12 @@ const sameMessages = chatStore.path<Message[]>([
 ```
 
 <Callout type="info" title="Tip: array vs. dot path">
-  Arrays are safer when segments may contain dots (UUIDs, emails). Dot strings
-  read nicer in code reviews. Pick a convention and stick with it.
+  Both forms normalize to the same native key — segments are joined with
+  dots, so `['conversations', 'release-room']` and
+  `'conversations.release-room'` address the same location. Arrays compose
+  nicely when building paths from variables; dot strings read nicer in code
+  reviews. Because the dot is the segment separator, design your ids without
+  dots — UUIDs, slugs, and numeric ids are all perfect.
 </Callout>
 
 ## Read and write

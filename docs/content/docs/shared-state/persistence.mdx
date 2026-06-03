@@ -6,7 +6,8 @@ description: Save shared state across runtime teardown and app restart with pers
 import { Callout } from 'fumadocs-ui/components/callout';
 
 Enable persistence when state should survive runtime teardown or app restart.
-Persistence is native, scoped per store key, and hydrates lazily by default.
+Persistence is native, scoped per store key, and restored automatically when
+the store hydrates — no extra wiring needed.
 
 ```tsx
 export const preferencesStore = createSharedStore({
@@ -107,7 +108,7 @@ These are two different options that are easy to confuse:
 
 | Option | What it controls |
 | --- | --- |
-| `subtrees` | **Eager hydration.** Listed subtrees hydrate immediately at store creation instead of lazily on first access. Nothing is written to disk. |
+| `subtrees` | **Hydration set.** Which top-level keys hydrate at store creation. Defaults to every key in `initialState`, so the store is warm out of the box; list a subset to keep heavy keys on-demand. Nothing is written to disk. |
 | `persist.subtrees` | **Persistence.** Listed subtrees are written to disk and restored on restart. |
 
 The top-level `subtrees` option is **not** persistence — see
@@ -135,8 +136,8 @@ export const pokemonStore = createSharedStore<PokemonState>({
 | --- | --- |
 | A few preferences saved across launches | `persist.subtrees: ['theme', 'auth', 'counter']` |
 | Per-conversation drafts that survive restart | Persist the `'drafts'` subtree together and update the whole object on each change — while you can specify individual paths like `['drafts', 'conv123']` in `persist.subtrees`, each unique value requires its own entry at store creation time, so dynamic conversation IDs cannot be persisted individually this way. A single shared subtree is simpler and more efficient |
-| A huge cache that must hydrate eagerly | Add it to `subtrees` and accept the cold-start cost |
-| A huge cache that can hydrate on first use | Don't list it — call `path.hydrate()` from the screen that needs it |
+| A huge cache that must hydrate eagerly | Keep the default (every top-level key hydrates), or include it explicitly in `subtrees` |
+| A huge cache that can hydrate on first use | Set `subtrees` to just your hot keys and leave the cache out — then call `path.hydrate()` from the screen that needs it |
 
 <Callout type="warn" title="Don't persist what you can recompute">
   If a value is cheap to recompute on launch (derived from another store, or

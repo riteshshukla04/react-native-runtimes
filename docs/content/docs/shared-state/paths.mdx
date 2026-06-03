@@ -81,9 +81,13 @@ last looked, even when the value happens to deep-equal the previous one.
 
 ## Listing the surface
 
-A store can pre-declare subtrees so they're hydrated eagerly. Anything not
-declared can still be reached via `store.path(...)` — it hydrates lazily on
-first access or when you call `path.hydrate()`.
+By default, every top-level key of `initialState` is treated as a subtree and
+hydrated at store creation, so reads are warm from the first render. Declaring
+`subtrees: [...]` narrows that set to exactly the keys you list — useful when
+some keys are heavy and should wait until a screen actually needs them.
+
+Dynamic paths created with `store.path(...)` — nested keys, per-id paths —
+hydrate on first access or when you call `path.hydrate()`.
 
 See [Persistence](/docs/shared-state/persistence) for the persisted-state
 counterpart.

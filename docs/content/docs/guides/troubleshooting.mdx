@@ -48,14 +48,21 @@ hook, or [native startup](/docs/threaded-runtime/prewarming#native-prewarm).
 
 ## Two runtimes overwrite each other's writes
 
-Use `update(fn)` or a path reducer instead of `set(value)`. See
+Shared paths are designed around a clear ownership model: one runtime writes
+a path, everyone else reads and subscribes. That's what keeps writes fast and
+predictable without cross-runtime locking. Give the contended path a single
+owning runtime, and when another runtime needs to change it, send the request
+to the owner as a
+[runtime function](/docs/threaded-runtime/scheduling-functions) or
+[headless task](/docs/threaded-runtime/headless-runtime) and let the owner
+write. See
 [Concurrency and revisions](/docs/shared-state/locking-and-revisions#concurrent-writers).
 
 ## `'background'` directive isn't being rewritten
 
 - The function must be declared at **module scope** (not inside another function or component).
 - The directive must be the **first statement** in the function body.
-- The function must be defined in a file under one of the Metro plugin's `roots`.
+- The function's file must be under one of the Metro plugin's `roots`, so the generated entry registers it for the target runtime to load.
 
 <Callout type="info" title="When in doubt, inspect the generated entry">
   Open `.threaded-runtime/entry.js` after a Metro run. It lists every
